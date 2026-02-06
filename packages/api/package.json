@@ -12,7 +12,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@exams2quiz/shared": "*",
+    "@exams2quiz/shared": "workspace:*",
     "fastify": "^5.2.0",
     "fastify-plugin": "^5.0.0",
     "@fastify/cors": "^11.0.0",
