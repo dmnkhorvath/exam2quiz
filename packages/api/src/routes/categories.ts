@@ -3,18 +3,28 @@ import { getDb } from "@exams2quiz/shared/db";
 
 export async function categoryRoutes(app: FastifyInstance) {
   // GET /api/categories — list categories for current tenant
-  app.get("/api/categories", {
+  app.get<{ Querystring: { tenantId?: string } }>("/api/categories", {
     preHandler: [app.authenticate],
     handler: async (request, reply) => {
       const db = getDb();
-      const { tenantId } = request.user;
+      const { role, tenantId: userTenantId } = request.user;
+      const queryTenantId = (request.query as { tenantId?: string }).tenantId;
 
-      if (!tenantId) {
+      // SUPER_ADMIN can query any tenant or list all
+      const effectiveTenantId = role === "SUPER_ADMIN"
+        ? queryTenantId ?? userTenantId
+        : userTenantId;
+
+      if (!effectiveTenantId) {
+        // SUPER_ADMIN with no tenant filter — return all categories
+        if (role === "SUPER_ADMIN") {
+          return db.tenantCategory.findMany({ orderBy: { sortOrder: "asc" } });
+        }
         return reply.code(400).send({ error: "User must belong to a tenant" });
       }
 
       return db.tenantCategory.findMany({
-        where: { tenantId },
+        where: { tenantId: effectiveTenantId },
         orderBy: { sortOrder: "asc" },
       });
     },
@@ -22,9 +32,9 @@ export async function categoryRoutes(app: FastifyInstance) {
 
   // POST /api/categories
   app.post<{
-    Body: { key: string; name: string; file: string; sortOrder?: number };
+    Body: { key: string; name: string; file: string; sortOrder?: number; tenantId?: string };
   }>("/api/categories", {
-    preHandler: [app.requireRole("SUPER_ADMIN", "TENANT_ADMIN")],
+    preHandler: [app.requireRole("SUPER_ADMIN", "TENANT_ADMIN", "TENANT_USER")],
     schema: {
       body: {
         type: "object",
@@ -34,17 +44,21 @@ export async function categoryRoutes(app: FastifyInstance) {
           name: { type: "string", minLength: 1 },
           file: { type: "string", minLength: 1 },
           sortOrder: { type: "number" },
+          tenantId: { type: "string" },
         },
       },
     },
     handler: async (request, reply) => {
       const db = getDb();
-      const { role, tenantId } = request.user;
-      const { key, name, file, sortOrder } = request.body;
+      const { role, tenantId: userTenantId } = request.user;
+      const { key, name, file, sortOrder, tenantId: bodyTenantId } = request.body;
 
-      const targetTenantId = role === "SUPER_ADMIN" ? tenantId : tenantId;
+      // SUPER_ADMIN can specify a target tenant; others use their own
+      const targetTenantId = role === "SUPER_ADMIN"
+        ? bodyTenantId ?? userTenantId
+        : userTenantId;
       if (!targetTenantId) {
-        return reply.code(400).send({ error: "Tenant context required" });
+        return reply.code(400).send({ error: "Tenant context required. SUPER_ADMIN must provide tenantId." });
       }
 
       // Check uniqueness
@@ -67,7 +81,7 @@ export async function categoryRoutes(app: FastifyInstance) {
     Params: { id: string };
     Body: { key?: string; name?: string; file?: string; sortOrder?: number };
   }>("/api/categories/:id", {
-    preHandler: [app.requireRole("SUPER_ADMIN", "TENANT_ADMIN")],
+    preHandler: [app.requireRole("SUPER_ADMIN", "TENANT_ADMIN", "TENANT_USER")],
     schema: {
       body: {
         type: "object",
@@ -103,7 +117,7 @@ export async function categoryRoutes(app: FastifyInstance) {
 
   // DELETE /api/categories/:id
   app.delete<{ Params: { id: string } }>("/api/categories/:id", {
-    preHandler: [app.requireRole("SUPER_ADMIN", "TENANT_ADMIN")],
+    preHandler: [app.requireRole("SUPER_ADMIN", "TENANT_ADMIN", "TENANT_USER")],
     handler: async (request, reply) => {
       const db = getDb();
       const { role, tenantId } = request.user;

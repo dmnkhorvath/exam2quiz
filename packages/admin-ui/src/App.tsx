@@ -78,14 +78,7 @@ export default function App() {
           }
         />
         <Route path="/pipelines" element={<PipelinesPage />} />
-        <Route
-          path="/categories"
-          element={
-            <RequireRole roles={["SUPER_ADMIN", "TENANT_ADMIN"]}>
-              <CategoriesPage />
-            </RequireRole>
-          }
-        />
+        <Route path="/categories" element={<CategoriesPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

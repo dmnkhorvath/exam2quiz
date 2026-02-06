@@ -1,15 +1,29 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { categoriesApi, type Category } from "../services/categories";
+import { tenantsApi } from "../services/tenants";
+import { useAuth } from "../hooks/useAuth";
 
 export default function CategoriesPage() {
   const qc = useQueryClient();
+  const { isSuperAdmin, user } = useAuth();
   const [editing, setEditing] = useState<Category | null>(null);
   const [creating, setCreating] = useState(false);
+  const [selectedTenantId, setSelectedTenantId] = useState<string>(user?.tenantId ?? "");
+
+  const { data: tenants } = useQuery({
+    queryKey: ["tenants"],
+    queryFn: () => tenantsApi.list(),
+    enabled: isSuperAdmin,
+  });
+
+  // Auto-select first tenant for SUPER_ADMIN
+  const effectiveTenantId = selectedTenantId || (isSuperAdmin ? tenants?.[0]?.id : user?.tenantId) || "";
 
   const { data: categories, isLoading } = useQuery({
-    queryKey: ["categories"],
-    queryFn: () => categoriesApi.list(),
+    queryKey: ["categories", effectiveTenantId],
+    queryFn: () => categoriesApi.list(effectiveTenantId || undefined),
+    enabled: !!effectiveTenantId || isSuperAdmin,
   });
 
   const deleteMut = useMutation({
@@ -31,6 +45,21 @@ export default function CategoriesPage() {
           + New Category
         </button>
       </div>
+
+      {isSuperAdmin && tenants && tenants.length > 0 && (
+        <div className="form-control w-full max-w-xs">
+          <label className="label"><span className="label-text">Tenant</span></label>
+          <select
+            className="select select-bordered"
+            value={effectiveTenantId}
+            onChange={(e) => setSelectedTenantId(e.target.value)}
+          >
+            {tenants.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-12">
@@ -94,6 +123,7 @@ export default function CategoriesPage() {
       {(creating || editing) && (
         <CategoryForm
           category={editing}
+          tenantId={effectiveTenantId}
           onClose={() => {
             setCreating(false);
             setEditing(null);
@@ -106,9 +136,11 @@ export default function CategoriesPage() {
 
 function CategoryForm({
   category,
+  tenantId,
   onClose,
 }: {
   category: Category | null;
+  tenantId: string;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -124,7 +156,7 @@ function CategoryForm({
     mutationFn: () =>
       category
         ? categoriesApi.update(category.id, form)
-        : categoriesApi.create(form),
+        : categoriesApi.create({ ...form, tenantId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["categories"] });
       onClose();

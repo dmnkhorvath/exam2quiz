@@ -11,9 +11,10 @@ export interface Category {
 }
 
 export const categoriesApi = {
-  list: () => api.get<Category[]>("/categories"),
+  list: (tenantId?: string) =>
+    api.get<Category[]>(tenantId ? `/categories?tenantId=${tenantId}` : "/categories"),
 
-  create: (data: { key: string; name: string; file: string; sortOrder?: number }) =>
+  create: (data: { key: string; name: string; file: string; sortOrder?: number; tenantId?: string }) =>
     api.post<Category>("/categories", data),
 
   update: (

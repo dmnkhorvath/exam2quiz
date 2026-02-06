@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import fp from "fastify-plugin";
 import fjwt from "@fastify/jwt";
 import bcrypt from "bcrypt";
 import { getConfig } from "@exams2quiz/shared/config";
@@ -13,7 +14,7 @@ declare module "@fastify/jwt" {
   }
 }
 
-export async function authPlugin(app: FastifyInstance) {
+export const authPlugin = fp(async function authPlugin(app: FastifyInstance) {
   const config = getConfig();
 
   await app.register(fjwt, {
@@ -46,7 +47,7 @@ export async function authPlugin(app: FastifyInstance) {
       };
     },
   );
-}
+});
 
 // Extend Fastify instance type
 declare module "fastify" {
