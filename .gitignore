@@ -25,3 +25,4 @@ Thumbs.db
 
 # Ralph agent state
 .ralph/agent/
+.worktrees/
