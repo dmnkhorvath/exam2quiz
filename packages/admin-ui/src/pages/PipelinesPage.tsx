@@ -7,6 +7,8 @@ export default function PipelinesPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState("");
   const [detail, setDetail] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [urls, setUrls] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["pipelines", filter],
@@ -18,10 +20,15 @@ export default function PipelinesPage() {
     refetchInterval: 5000,
   });
 
+  const canSubmit = selectedFiles.length > 0 || urls.trim().length > 0;
+
   const uploadMut = useMutation({
-    mutationFn: (file: File) => pipelinesApi.upload(file),
+    mutationFn: ({ files, urls: u }: { files: File[]; urls: string }) =>
+      pipelinesApi.upload(files, u),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipelines"] });
+      setSelectedFiles([]);
+      setUrls("");
       if (fileRef.current) fileRef.current.value = "";
     },
   });
@@ -35,19 +42,47 @@ export default function PipelinesPage() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Pipelines</h1>
-        <div className="flex gap-2 items-center">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf"
-            className="file-input file-input-bordered file-input-sm w-64"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) uploadMut.mutate(f);
-            }}
-          />
+      <h1 className="text-2xl font-bold">Pipelines</h1>
+
+      <div className="bg-base-100 rounded-lg shadow p-4 space-y-3">
+        <div className="flex gap-4 items-start">
+          <div className="flex-1 space-y-1">
+            <label className="label label-text text-xs">PDF Files</label>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf"
+              multiple
+              className="file-input file-input-bordered file-input-sm w-full"
+              onChange={(e) =>
+                setSelectedFiles(e.target.files ? Array.from(e.target.files) : [])
+              }
+            />
+            {selectedFiles.length > 0 && (
+              <p className="text-xs text-base-content/60">
+                {selectedFiles.length} file{selectedFiles.length > 1 ? "s" : ""} selected
+              </p>
+            )}
+          </div>
+          <div className="flex-1 space-y-1">
+            <label className="label label-text text-xs">URLs (one per line)</label>
+            <textarea
+              className="textarea textarea-bordered textarea-sm w-full"
+              rows={2}
+              placeholder="https://example.com/exam1.pdf&#10;https://example.com/exam2.pdf"
+              value={urls}
+              onChange={(e) => setUrls(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={!canSubmit || uploadMut.isPending}
+            onClick={() => uploadMut.mutate({ files: selectedFiles, urls })}
+          >
+            Start Pipeline
+          </button>
           {uploadMut.isPending && (
             <span className="loading loading-spinner loading-sm" />
           )}
