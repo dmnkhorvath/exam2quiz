@@ -1,0 +1,128 @@
+services:
+  # ─── PostgreSQL ───────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: exams2quiz
+      POSTGRES_PASSWORD: exams2quiz
+      POSTGRES_DB: exams2quiz
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exams2quiz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── API Server ───────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    ports:
+      - "3000:3000"
+      - "9090:9090"
+    environment:
+      DATABASE_URL: postgresql://exams2quiz:exams2quiz@postgres:5432/exams2quiz
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      API_HOST: "0.0.0.0"
+      API_PORT: "3000"
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      NODE_ENV: production
+      LOG_LEVEL: info
+      UPLOAD_DIR: /data/uploads
+      OUTPUT_DIR: /data/output
+      METRICS_PORT: "9090"
+    volumes:
+      - upload-data:/data/uploads
+      - output-data:/data/output
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Workers ──────────────────────────────────────────────────────
+  workers:
+    build:
+      context: .
+      dockerfile: docker/workers.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://exams2quiz:exams2quiz@postgres:5432/exams2quiz
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      WORKER_CONCURRENCY: "3"
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      NODE_ENV: production
+      LOG_LEVEL: info
+      UPLOAD_DIR: /data/uploads
+      OUTPUT_DIR: /data/output
+    volumes:
+      - upload-data:/data/uploads
+      - output-data:/data/output
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Admin UI (Nginx + SPA) ──────────────────────────────────────
+  admin-ui:
+    build:
+      context: .
+      dockerfile: docker/admin-ui.Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  # ─── Prometheus ───────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v3.2.0
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - api
+
+  # ─── Grafana ──────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.5.1
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres-data:
+  redis-data:
+  upload-data:
+  output-data:
+  prometheus-data:
+  grafana-data:

@@ -1,0 +1,13 @@
+[
+  { "key": "ALTALANOS_ANATOMIA_ES_KORTAN", "name": "Általános anatómia és kortan", "file": "altalanos_anatomia_es_kortan.json" },
+  { "key": "A_MOZGAS_SZERV_RENDSZERE", "name": "A mozgás szerv rendszere", "file": "a_mozgas_szerv_rendszere.json" },
+  { "key": "KERINGES", "name": "Keringés", "file": "keringes.json" },
+  { "key": "LEGZORENDSZER", "name": "Légzőrendszer", "file": "legzorendszer.json" },
+  { "key": "IDEGRENDSZER", "name": "Idegrendszer", "file": "idegrendszer.json" },
+  { "key": "KIVALASZTAS_SZERVRENDSZERE", "name": "Kiválasztás szervrendszere", "file": "kivalasztas_szervrendszere.json" },
+  { "key": "SZAPORODAS_SZERVRENDSZERE", "name": "Szaporodás szervrendszere", "file": "szaporodas_szervrendszere.json" },
+  { "key": "A_NEUROENDOKRIN_RENDSZER", "name": "A neuroendokrin rendszer", "file": "a_neuroendokrin_rendszer.json" },
+  { "key": "AZ_ERZEKSZERVEK_ES_EMLO", "name": "Az érzékszervek és emlő", "file": "az_erzekszervek_es_emlo.json" },
+  { "key": "ELSOSEGELYNYUJTAS", "name": "Elsősegélynyújtás", "file": "elsosegelynyujtas.json" },
+  { "key": "EMESZTES", "name": "Emésztés", "file": "emesztes.json" }
+]

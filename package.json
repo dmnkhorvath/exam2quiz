@@ -1,0 +1,38 @@
+{
+  "name": "exams2quiz",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev:api": "npm run dev -w packages/api",
+    "dev:workers": "npm run dev -w packages/workers",
+    "dev:admin": "npm run dev -w packages/admin-ui",
+    "lint": "eslint packages/*/src/",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit": "npm audit --audit-level=high || true",
+    "db:generate": "npm run db:generate -w packages/shared",
+    "db:migrate": "npm run db:migrate -w packages/shared",
+    "db:push": "npm run db:push -w packages/shared",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:build": "docker compose build"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9.39.2",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.0",
+    "globals": "^17.3.0",
+    "typescript-eslint": "^8.54.0",
+    "vitest": "^3.2.4"
+  }
+}

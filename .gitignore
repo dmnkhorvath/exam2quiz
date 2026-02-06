@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+coverage/
+.turbo/
+packages/*/dist/
+
+# Database
+packages/shared/prisma/*.db
+
+# Docker volumes
+docker-data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Ralph agent state
+.ralph/agent/
