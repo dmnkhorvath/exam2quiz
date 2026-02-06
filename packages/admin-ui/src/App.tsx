@@ -8,6 +8,7 @@ import UsersPage from "./pages/UsersPage";
 import PipelinesPage from "./pages/PipelinesPage";
 import CategoriesPage from "./pages/CategoriesPage";
 import SettingsPage from "./pages/SettingsPage";
+import QuestionsPage from "./pages/QuestionsPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -80,6 +81,7 @@ export default function App() {
         />
         <Route path="/pipelines" element={<PipelinesPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
+        <Route path="/questions" element={<QuestionsPage />} />
         <Route
           path="/settings"
           element={

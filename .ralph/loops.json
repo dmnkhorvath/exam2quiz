@@ -1,12 +1,3 @@
 {
-  "loops": [
-    {
-      "id": "cool-falcon",
-      "pid": 42297,
-      "started": "2026-02-06T13:15:38.621333Z",
-      "prompt": "add feature to edig tenant's  gemini key from admin user and self edit by tenant",
-      "worktree_path": "/Users/dominik.horvath/git/exams2quiz/.worktrees/cool-falcon",
-      "workspace": "/Users/dominik.horvath/git/exams2quiz/.worktrees/cool-falcon"
-    }
-  ]
+  "loops": []
 }

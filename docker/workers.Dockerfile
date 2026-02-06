@@ -1,10 +1,11 @@
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/workers/package.json packages/workers/
 
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 RUN npm ci --workspace=packages/shared --workspace=packages/workers
 
 COPY tsconfig.base.json ./
@@ -16,7 +17,7 @@ RUN npx prisma generate --schema=packages/shared/prisma/schema.prisma
 RUN npm run build -w packages/shared && npm run build -w packages/workers
 
 # ─── Production ─────────────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 COPY --from=builder /app/package.json ./
@@ -28,6 +29,7 @@ COPY --from=builder /app/packages/workers/dist packages/workers/dist/
 COPY --from=builder /app/config config/
 COPY --from=builder /app/node_modules node_modules/
 
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /data/uploads /data/output
 
 CMD ["node", "packages/workers/dist/index.js"]

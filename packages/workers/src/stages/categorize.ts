@@ -17,6 +17,7 @@ import {
 import { getConfig } from "@exams2quiz/shared/config";
 import { createWorker, addJob } from "@exams2quiz/shared/queue";
 import { getDb } from "@exams2quiz/shared/db";
+import { logStageEvent, trackQuestionProcessed, trackGeminiCall, trackCategoryQuestion } from "../metrics.js";
 
 // ─── Constants ────────────────────────────────────────────────────
 const GEMINI_MODEL = "gemini-2.0-flash";
@@ -169,17 +170,29 @@ Correct Answer: ${data.correct_answer}`;
 
       // Validate category is in the allowed list
       const categoryNames = categories.map((c) => c.name);
-      let category = parsed.category;
+      let category = parsed.category as string | undefined;
+      if (!category) {
+        logStageEvent("categorize", "warn", "missing_category", "Gemini returned no category field", { file: question.file });
+        trackGeminiCall("categorize", "failure");
+        trackQuestionProcessed("categorize", false);
+        return {
+          ...question,
+          categorization: { success: false, category: "", reasoning: "No category in response" },
+        };
+      }
       if (!categoryNames.includes(category)) {
         // Try closest match
         const match = categoryNames.find(
           (name) =>
-            name.toLowerCase().includes(category.toLowerCase()) ||
-            category.toLowerCase().includes(name.toLowerCase()),
+            name.toLowerCase().includes(category!.toLowerCase()) ||
+            category!.toLowerCase().includes(name.toLowerCase()),
         );
         if (match) category = match;
       }
 
+      trackGeminiCall("categorize", "success");
+      trackQuestionProcessed("categorize", true);
+      trackCategoryQuestion(category);
       return {
         ...question,
         categorization: {
@@ -190,20 +203,27 @@ Correct Answer: ${data.correct_answer}`;
       };
     } catch (err) {
       if (isRateLimitError(err) && attempt < MAX_RETRIES - 1) {
+        trackGeminiCall("categorize", "rate_limited");
+        logStageEvent("categorize", "warn", "rate_limited", `Rate limited on ${question.file}, retrying`, { file: question.file });
         await sleep((attempt + 1) * 2000);
         continue;
       }
 
       if (err instanceof SyntaxError && attempt < MAX_RETRIES - 1) {
+        logStageEvent("categorize", "warn", "json_parse_retry", `JSON parse error on ${question.file}, retrying`, { file: question.file });
         await sleep(1000);
         continue;
       }
 
       if (attempt < MAX_RETRIES - 1) {
+        logStageEvent("categorize", "warn", "api_error_retry", `API error on ${question.file}, retrying`, { file: question.file, error: String(err) });
         await sleep(1000);
         continue;
       }
 
+      trackGeminiCall("categorize", "failure");
+      trackQuestionProcessed("categorize", false);
+      logStageEvent("categorize", "error", "categorize_failed", `Failed to categorize ${question.file} after ${MAX_RETRIES} attempts`, { file: question.file });
       return {
         ...question,
         categorization: {
@@ -262,9 +282,7 @@ async function processCategorize(
     job.data;
   const db = getDb();
 
-  console.log(
-    `[categorize] Processing questions from ${parsedQuestionsPath} (tenant: ${tenantId})`,
-  );
+  logStageEvent("categorize", "info", "job_started", `Processing questions from ${parsedQuestionsPath}`, { tenantId, pipelineRunId });
 
   // Update job status to active
   await db.pipelineJob.updateMany({
@@ -284,11 +302,14 @@ async function processCategorize(
     // Filter to only successful parses with data
     const validQuestions = allQuestions.filter((q) => q.success && q.data);
 
-    console.log(
-      `[categorize] ${validQuestions.length}/${allQuestions.length} valid questions to categorize`,
-    );
+    logStageEvent("categorize", "info", "questions_loaded", `${validQuestions.length}/${allQuestions.length} valid questions to categorize`, { validCount: validQuestions.length, totalCount: allQuestions.length });
+    if (validQuestions.length < allQuestions.length) {
+      logStageEvent("categorize", "warn", "skipped_questions", `${allQuestions.length - validQuestions.length} questions skipped (no parsed data)`, { skippedCount: allQuestions.length - validQuestions.length });
+    }
 
     if (validQuestions.length === 0) {
+      logStageEvent("categorize", "warn", "no_valid_questions", "No valid questions to categorize, passing empty result to next stage", { pipelineRunId });
+
       const emptyResult = {
         totalQuestions: 0,
         categorizedQuestions: 0,
@@ -305,6 +326,29 @@ async function processCategorize(
           completedAt: new Date(),
           result: emptyResult,
         },
+      });
+
+      // Still enqueue next stage so pipeline completes
+      const nextJobData: SimilarityJobData = {
+        tenantId,
+        pipelineRunId,
+        inputPath: outputPath,
+        outputPath: path.join(path.dirname(outputPath), "similarity.json"),
+      };
+      await addJob(
+        PipelineStage.SIMILARITY,
+        nextJobData as unknown as Record<string, unknown>,
+      );
+      await db.pipelineJob.create({
+        data: {
+          pipelineRunId,
+          stage: PipelineStage.SIMILARITY,
+          status: "PENDING",
+        },
+      });
+      await db.pipelineRun.update({
+        where: { id: pipelineRunId },
+        data: { currentStage: PipelineStage.SIMILARITY },
       });
 
       return emptyResult;
@@ -378,9 +422,11 @@ async function processCategorize(
       data: { currentStage: PipelineStage.SIMILARITY },
     });
 
-    console.log(
-      `[categorize] Done: ${categorizedCount}/${results.length} questions categorized`,
-    );
+    const failedCount = results.length - categorizedCount;
+    logStageEvent("categorize", "info", "job_completed", `Categorized ${categorizedCount}/${results.length} questions`, { pipelineRunId, categorizedCount, failedCount });
+    if (failedCount > 0) {
+      logStageEvent("categorize", "warn", "partial_failure", `${failedCount} questions failed to categorize`, { pipelineRunId, failedCount });
+    }
     return {
       totalQuestions: results.length,
       categorizedQuestions: categorizedCount,
@@ -388,6 +434,7 @@ async function processCategorize(
     };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    logStageEvent("categorize", "error", "job_failed", errorMsg, { pipelineRunId });
 
     // Update job status to failed
     await db.pipelineJob.updateMany({

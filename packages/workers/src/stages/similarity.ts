@@ -10,6 +10,7 @@ import {
 import { getConfig } from "@exams2quiz/shared/config";
 import { createWorker, addJob } from "@exams2quiz/shared/queue";
 import { getDb } from "@exams2quiz/shared/db";
+import { logStageEvent, trackSimilarityGroups } from "../metrics.js";
 
 // ─── Constants ────────────────────────────────────────────────────
 const BI_ENCODER_MODEL = "Xenova/multilingual-e5-small";
@@ -321,7 +322,7 @@ async function verifyClustersWithCrossEncoder(
     classifier = await getCrossEncoderPipeline();
   } catch {
     // If cross-encoder can't load, return clusters as-is (each cluster = 1 component)
-    console.log("[similarity] Cross-encoder not available, skipping verification");
+    logStageEvent("similarity", "warn", "cross_encoder_unavailable", "Cross-encoder not available, skipping verification");
     const result = new Map<number, number[][]>();
     for (const [label, members] of clusters) {
       result.set(label, [members]);
@@ -476,7 +477,8 @@ async function runStage1(
     onProgress?.(processedCategories, totalCategories);
   }
 
-  console.log(`[similarity] Stage 1 complete: ${globalGroupCounter} groups found`);
+  trackSimilarityGroups(globalGroupCounter);
+  logStageEvent("similarity", "info", "stage1_complete", `${globalGroupCounter} groups found across ${categoryGroups.size} categories`, { groupCount: globalGroupCounter });
 }
 
 // ─── Stage 2: Refinement of Large Groups ──────────────────────────
@@ -706,9 +708,7 @@ async function processSimilarity(
   } = job.data;
   const db = getDb();
 
-  console.log(
-    `[similarity] Processing questions from ${inputPath} (tenant: ${tenantId})`,
-  );
+  logStageEvent("similarity", "info", "job_started", `Processing questions from ${inputPath}`, { tenantId, pipelineRunId });
 
   // Update job status to active
   await db.pipelineJob.updateMany({
@@ -721,7 +721,7 @@ async function processSimilarity(
     const raw = await readFile(inputPath, "utf-8");
     const questions: CategorizedQuestionEntry[] = JSON.parse(raw);
 
-    console.log(`[similarity] Loaded ${questions.length} questions`);
+    logStageEvent("similarity", "info", "questions_loaded", `Loaded ${questions.length} questions`, { questionCount: questions.length });
 
     // Initialize all similarity_group_id to null
     for (const q of questions) {
@@ -729,6 +729,8 @@ async function processSimilarity(
     }
 
     if (questions.length < 2) {
+      logStageEvent("similarity", "info", "too_few_questions", `Only ${questions.length} questions, skipping similarity analysis`, { pipelineRunId });
+
       const emptyResult = {
         totalQuestions: questions.length,
         groupsFound: 0,
@@ -746,6 +748,34 @@ async function processSimilarity(
           completedAt: new Date(),
           result: emptyResult,
         },
+      });
+
+      // Still enqueue next stage so pipeline completes
+      const nextJobData: CategorySplitJobData = {
+        tenantId,
+        pipelineRunId,
+        inputPath: outputPath,
+        categoriesConfigPath: path.join(
+          process.cwd(),
+          "config",
+          "categories.json",
+        ),
+        outputDir: path.join(path.dirname(outputPath), "split"),
+      };
+      await addJob(
+        PipelineStage.CATEGORY_SPLIT,
+        nextJobData as unknown as Record<string, unknown>,
+      );
+      await db.pipelineJob.create({
+        data: {
+          pipelineRunId,
+          stage: PipelineStage.CATEGORY_SPLIT,
+          status: "PENDING",
+        },
+      });
+      await db.pipelineRun.update({
+        where: { id: pipelineRunId },
+        data: { currentStage: PipelineStage.CATEGORY_SPLIT },
       });
 
       return emptyResult;
@@ -808,8 +838,7 @@ async function processSimilarity(
       pipelineRunId,
       inputPath: outputPath,
       categoriesConfigPath: path.join(
-        path.dirname(outputPath),
-        "..",
+        process.cwd(),
         "config",
         "categories.json",
       ),
@@ -834,12 +863,11 @@ async function processSimilarity(
       data: { currentStage: PipelineStage.CATEGORY_SPLIT },
     });
 
-    console.log(
-      `[similarity] Done: ${groups.size} groups, ${assigned}/${questions.length} questions assigned`,
-    );
+    logStageEvent("similarity", "info", "job_completed", `${groups.size} groups, ${assigned}/${questions.length} questions assigned`, { pipelineRunId, groupCount: groups.size, assignedCount: assigned });
     return result;
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    logStageEvent("similarity", "error", "job_failed", errorMsg, { pipelineRunId });
 
     // Update job status to failed
     await db.pipelineJob.updateMany({

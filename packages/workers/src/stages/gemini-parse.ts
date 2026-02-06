@@ -16,6 +16,7 @@ import {
 import { getConfig } from "@exams2quiz/shared/config";
 import { createWorker, addJob } from "@exams2quiz/shared/queue";
 import { getDb } from "@exams2quiz/shared/db";
+import { logStageEvent, trackQuestionProcessed, trackGeminiCall } from "../metrics.js";
 
 // ─── Constants ────────────────────────────────────────────────────
 const GEMINI_MODEL = "gemini-2.0-flash";
@@ -146,30 +147,39 @@ async function parseSingleImage(
       const responseText = result.response.text();
       const parsed = JSON.parse(responseText);
 
+      trackGeminiCall("gemini-parse", "success");
+      trackQuestionProcessed("gemini-parse", true);
       return { file: fileName, success: true, data: parsed };
     } catch (err) {
       // Rate limit: exponential backoff
       if (isRateLimitError(err) && attempt < MAX_RETRIES - 1) {
+        trackGeminiCall("gemini-parse", "rate_limited");
+        logStageEvent("gemini-parse", "warn", "rate_limited", `Rate limited on ${fileName}, retrying (attempt ${attempt + 1})`, { file: fileName });
         await sleep((attempt + 1) * 2000);
         continue;
       }
 
       // JSON parse error: simple retry
       if (err instanceof SyntaxError && attempt < MAX_RETRIES - 1) {
+        logStageEvent("gemini-parse", "warn", "json_parse_retry", `JSON parse error on ${fileName}, retrying`, { file: fileName });
         await sleep(1000);
         continue;
       }
 
       // Other errors: simple retry
       if (attempt < MAX_RETRIES - 1) {
+        logStageEvent("gemini-parse", "warn", "api_error_retry", `API error on ${fileName}, retrying`, { file: fileName, error: String(err) });
         await sleep(1000);
         continue;
       }
 
       // All retries exhausted
+      trackGeminiCall("gemini-parse", "failure");
+      trackQuestionProcessed("gemini-parse", false);
       const errorType = err instanceof SyntaxError
         ? "json_parse_error"
         : "api_error";
+      logStageEvent("gemini-parse", "error", "parse_failed", `Failed to parse ${fileName} after ${MAX_RETRIES} attempts`, { file: fileName, errorType });
       return {
         file: fileName,
         success: false,
@@ -216,9 +226,7 @@ async function processGeminiParse(
   const { tenantId, pipelineRunId, imagePaths, outputDir } = job.data;
   const db = getDb();
 
-  console.log(
-    `[gemini-parse] Processing ${imagePaths.length} images (tenant: ${tenantId})`,
-  );
+  logStageEvent("gemini-parse", "info", "job_started", `Processing ${imagePaths.length} images`, { tenantId, pipelineRunId, imageCount: imagePaths.length });
 
   // Update job status to active
   await db.pipelineJob.updateMany({
@@ -303,9 +311,11 @@ async function processGeminiParse(
       data: { currentStage: PipelineStage.CATEGORIZE },
     });
 
-    console.log(
-      `[gemini-parse] Done: ${successfulCount}/${results.length} questions parsed`,
-    );
+    const failedCount = results.length - successfulCount;
+    logStageEvent("gemini-parse", "info", "job_completed", `Parsed ${successfulCount}/${results.length} questions`, { pipelineRunId, successfulCount, failedCount });
+    if (failedCount > 0) {
+      logStageEvent("gemini-parse", "warn", "partial_failure", `${failedCount} questions failed to parse`, { pipelineRunId, failedCount });
+    }
     return {
       totalQuestions: results.length,
       successfulQuestions: successfulCount,
@@ -313,6 +323,7 @@ async function processGeminiParse(
     };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    logStageEvent("gemini-parse", "error", "job_failed", errorMsg, { pipelineRunId });
 
     // Update job status to failed
     await db.pipelineJob.updateMany({
