@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { getDb } from "@exams2quiz/shared/db";
 
 export async function tenantSettingsRoutes(app: FastifyInstance) {
-  const requireTenantAdmin = app.requireRole("TENANT_ADMIN");
+  const requireTenantMember = app.requireRole("TENANT_ADMIN", "TENANT_USER");
   const requireAuth = app.authenticate;
 
   // GET /api/tenant/settings — any authenticated tenant member can view (key is masked)
@@ -40,7 +40,7 @@ export async function tenantSettingsRoutes(app: FastifyInstance) {
   app.put<{
     Body: { geminiApiKey?: string | null };
   }>("/api/tenant/settings", {
-    preHandler: [requireTenantAdmin],
+    preHandler: [requireTenantMember],
     schema: {
       body: {
         type: "object",

@@ -1,10 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tenantSettingsApi } from "../services/tenant-settings";
-import { useAuth } from "../hooks/useAuth";
-
 export default function SettingsPage() {
-  const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [apiKey, setApiKey] = useState("");
@@ -63,14 +60,12 @@ export default function SettingsPage() {
                       Not configured
                     </span>
                   )}
-                  {isAdmin && (
-                    <button
-                      className="btn btn-ghost btn-xs"
-                      onClick={() => setEditing(true)}
-                    >
-                      Edit
-                    </button>
-                  )}
+                  <button
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setEditing(true)}
+                  >
+                    Edit
+                  </button>
                 </div>
               ) : (
                 <ApiKeyForm

@@ -22,8 +22,8 @@ async function request<T>(
 
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  // Don't set Content-Type for FormData (browser sets boundary)
-  if (!(opts.body instanceof FormData)) {
+  // Don't set Content-Type for FormData (browser sets boundary) or when there's no body
+  if (opts.body !== undefined && !(opts.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
 

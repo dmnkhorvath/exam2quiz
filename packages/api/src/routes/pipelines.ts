@@ -47,6 +47,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
         data: {
           tenantId,
           status: "QUEUED",
+          filename: file.filename,
           currentStage: PipelineStage.PDF_EXTRACT,
           totalPdfs: 1,
         },

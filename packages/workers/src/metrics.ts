@@ -8,6 +8,7 @@ import {
 } from "prom-client";
 import { type Worker } from "bullmq";
 import { getConfig } from "@exams2quiz/shared/config";
+import { getDb } from "@exams2quiz/shared/db";
 
 const register = new Registry();
 
@@ -53,8 +54,23 @@ export function instrumentWorker(worker: Worker, stage: string): void {
     }
   });
 
-  worker.on("failed", (_job, _err) => {
+  worker.on("failed", (job, err) => {
     jobsFailedTotal.inc({ stage });
+
+    // Safety net: if the processor crashed (e.g. native module error),
+    // the in-processor catch block never ran, so ensure the pipeline
+    // run is marked FAILED to avoid blocking the concurrency limit.
+    const pipelineRunId = job?.data?.pipelineRunId as string | undefined;
+    if (pipelineRunId) {
+      const errorMsg = err?.message ?? String(err);
+      const db = getDb();
+      db.pipelineRun.update({
+        where: { id: pipelineRunId },
+        data: { status: "FAILED", errorMessage: errorMsg },
+      }).catch((e: unknown) => {
+        console.error(`[metrics] Failed to mark pipeline run ${pipelineRunId} as FAILED:`, e);
+      });
+    }
   });
 
   worker.on("active", () => {
