@@ -101,7 +101,7 @@ export default function DashboardPage() {
                 <tbody>
                   {pData.slice(0, 10).map((p) => (
                     <tr key={p.id}>
-                      <td className="font-mono text-xs">{p.filename}</td>
+                      <td className="font-mono text-xs">{(p.filenames ?? []).join(", ") || "-"}</td>
                       <td>
                         <StatusBadge status={p.status} />
                       </td>

@@ -202,10 +202,10 @@ async function extractQuestionsFromPdf(
 
 // ─── BullMQ Processor ─────────────────────────────────────────────
 async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questionCount: number; imagePaths: string[] }> {
-  const { tenantId, pipelineRunId, pdfPath, outputDir, dpi = 150 } = job.data;
+  const { tenantId, pipelineRunId, pdfPaths, outputDir, dpi = 150 } = job.data;
   const db = getDb();
 
-  logStageEvent("pdf-extract", "info", "job_started", `Processing ${path.basename(pdfPath)}`, { tenantId, pipelineRunId });
+  logStageEvent("pdf-extract", "info", "job_started", `Processing ${pdfPaths.length} PDF(s)`, { tenantId, pipelineRunId });
 
   // Update job status to active
   await db.pipelineJob.updateMany({
@@ -220,16 +220,44 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
   });
 
   try {
-    // Read the PDF file
-    const pdfBuffer = await readFile(pdfPath);
-    const result = await extractQuestionsFromPdf(pdfBuffer, path.basename(pdfPath), outputDir, dpi);
+    const allImagePaths: string[] = [];
+    let totalQuestionCount = 0;
 
-    await job.updateProgress(100);
+    // Process each PDF sequentially, collecting all image paths
+    for (let pdfIdx = 0; pdfIdx < pdfPaths.length; pdfIdx++) {
+      const pdfPath = pdfPaths[pdfIdx];
+      const pdfBuffer = await readFile(pdfPath);
+      const result = await extractQuestionsFromPdf(pdfBuffer, path.basename(pdfPath), outputDir, dpi);
 
-    // Collect image paths for next stage
-    const pdfStem = path.basename(pdfPath, path.extname(pdfPath));
-    const pdfOutputDir = path.join(outputDir, pdfStem);
-    const imagePaths = result.questions.map((q) => path.join(pdfOutputDir, q.image_file));
+      // Collect image paths for this PDF
+      const pdfStem = path.basename(pdfPath, path.extname(pdfPath));
+      const pdfOutputDir = path.join(outputDir, pdfStem);
+      const imagePaths = result.questions.map((q) => path.join(pdfOutputDir, q.image_file));
+      allImagePaths.push(...imagePaths);
+      totalQuestionCount += result.questions.length;
+
+      // Track extracted questions
+      for (const _q of result.questions) {
+        trackQuestionProcessed("pdf-extract", true);
+      }
+      if (imagePaths.length === 0) {
+        logStageEvent("pdf-extract", "warn", "no_questions_found", `No questions extracted from ${path.basename(pdfPath)}`, { pipelineRunId });
+      }
+
+      // Update pipeline run progress per PDF
+      await db.pipelineRun.update({
+        where: { id: pipelineRunId },
+        data: {
+          processedPdfs: { increment: 1 },
+          totalQuestions: { increment: result.questions.length },
+        },
+      });
+
+      // Report progress as percentage of PDFs processed
+      await job.updateProgress(Math.round(((pdfIdx + 1) / pdfPaths.length) * 100));
+
+      logStageEvent("pdf-extract", "info", "pdf_processed", `Extracted ${result.questions.length} questions from ${path.basename(pdfPath)} (${pdfIdx + 1}/${pdfPaths.length})`, { pipelineRunId });
+    }
 
     // Update job status to completed
     await db.pipelineJob.updateMany({
@@ -238,33 +266,16 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
         status: "COMPLETED",
         progress: 100,
         completedAt: new Date(),
-        result: { questionCount: result.questions.length, imagePaths },
+        result: { questionCount: totalQuestionCount, imagePaths: allImagePaths },
       },
     });
 
-    // Update pipeline run progress
-    await db.pipelineRun.update({
-      where: { id: pipelineRunId },
-      data: {
-        processedPdfs: { increment: 1 },
-        totalQuestions: { increment: result.questions.length },
-      },
-    });
-
-    // Track extracted questions
-    for (const _q of result.questions) {
-      trackQuestionProcessed("pdf-extract", true);
-    }
-    if (imagePaths.length === 0) {
-      logStageEvent("pdf-extract", "warn", "no_questions_found", `No questions extracted from ${path.basename(pdfPath)}`, { pipelineRunId });
-    }
-
-    // Enqueue next stage: gemini-parse
-    if (imagePaths.length > 0) {
+    // Enqueue next stage: gemini-parse (only after ALL PDFs processed)
+    if (allImagePaths.length > 0) {
       const nextJobData: GeminiParseJobData = {
         tenantId,
         pipelineRunId,
-        imagePaths,
+        imagePaths: allImagePaths,
         outputDir,
       };
       await addJob(PipelineStage.GEMINI_PARSE, nextJobData as unknown as Record<string, unknown>);
@@ -284,8 +295,8 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
       });
     }
 
-    logStageEvent("pdf-extract", "info", "job_completed", `Extracted ${result.questions.length} questions from ${path.basename(pdfPath)}`, { pipelineRunId, questionCount: result.questions.length });
-    return { questionCount: result.questions.length, imagePaths };
+    logStageEvent("pdf-extract", "info", "job_completed", `Extracted ${totalQuestionCount} questions from ${pdfPaths.length} PDF(s)`, { pipelineRunId, questionCount: totalQuestionCount });
+    return { questionCount: totalQuestionCount, imagePaths: allImagePaths };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     logStageEvent("pdf-extract", "error", "job_failed", errorMsg, { pipelineRunId });

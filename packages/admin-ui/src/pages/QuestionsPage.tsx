@@ -43,7 +43,7 @@ export default function QuestionsPage() {
           </option>
           {pipelines.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.filename ?? p.id} — {new Date(p.createdAt).toLocaleDateString()}
+              {(p.filenames ?? []).join(", ") || p.id} — {new Date(p.createdAt).toLocaleDateString()}
             </option>
           ))}
         </select>

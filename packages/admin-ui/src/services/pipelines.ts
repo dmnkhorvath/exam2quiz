@@ -3,7 +3,8 @@ import { api } from "./api";
 export interface PipelineRun {
   id: string;
   tenantId: string;
-  filename: string;
+  filenames: string[];
+  sourceUrls: string[];
   status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
   currentStage: string | null;
   progress: number;

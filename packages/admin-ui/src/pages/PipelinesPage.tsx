@@ -97,7 +97,7 @@ export default function PipelinesPage() {
               {runs.map((p) => (
                 <tr key={p.id}>
                   <td className="font-mono text-xs max-w-48 truncate">
-                    {p.filename}
+                    {(p.filenames ?? []).join(", ") || "-"}
                   </td>
                   <td>
                     <StatusBadge status={p.status} />
@@ -204,8 +204,8 @@ function PipelineDetail({
           <div className="mt-4 space-y-4">
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
-                <span className="text-base-content/60">File:</span>{" "}
-                <span className="font-mono">{data.filename}</span>
+                <span className="text-base-content/60">Files:</span>{" "}
+                <span className="font-mono">{(data.filenames ?? []).join(", ") || "-"}</span>
               </div>
               <div>
                 <span className="text-base-content/60">Status:</span>{" "}

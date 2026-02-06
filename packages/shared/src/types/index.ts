@@ -86,7 +86,7 @@ export type FullQuestion = z.infer<typeof FullQuestionSchema>;
 export interface PdfExtractJobData {
   tenantId: string;
   pipelineRunId: string;
-  pdfPath: string;
+  pdfPaths: string[];
   outputDir: string;
   dpi?: number;
 }

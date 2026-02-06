@@ -48,7 +48,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
         data: {
           tenantId,
           status: "QUEUED",
-          filename: file.filename,
+          filenames: [file.filename],
           currentStage: PipelineStage.PDF_EXTRACT,
           totalPdfs: 1,
         },
@@ -83,7 +83,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
       const bullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
         tenantId,
         pipelineRunId: pipelineRun.id,
-        pdfPath,
+        pdfPaths: [pdfPath],
         outputDir,
       });
 

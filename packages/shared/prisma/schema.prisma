@@ -77,7 +77,8 @@ model PipelineRun {
   tenantId        String
   tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   status          PipelineStatus @default(QUEUED)
-  filename        String?
+  filenames       Json?          @default("[]")
+  sourceUrls      Json?          @default("[]")
   currentStage    String?
   totalPdfs       Int            @default(0)
   processedPdfs   Int            @default(0)
