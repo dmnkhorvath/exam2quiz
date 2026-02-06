@@ -29,7 +29,14 @@ COPY --from=builder /app/packages/workers/dist packages/workers/dist/
 COPY --from=builder /app/config config/
 COPY --from=builder /app/node_modules node_modules/
 
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+# Install Python + uv for the similarity worker subprocess
+RUN apt-get update -y && apt-get install -y openssl python3 curl && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Copy Python scripts used by the similarity worker
+COPY scripts/ scripts/
+
 RUN mkdir -p /data/uploads /data/output
 
 CMD ["node", "packages/workers/dist/index.js"]
