@@ -41,6 +41,8 @@ export function createWorker<T>(
   return new Worker<T>(name, processor, {
     connection: getRedisConfig(),
     concurrency: 3,
+    lockDuration: 600_000,      // 10 min — long-running stages (similarity, gemini-parse)
+    stalledInterval: 300_000,   // 5 min — check for stalled jobs
     ...opts,
   });
 }
