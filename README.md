@@ -46,7 +46,7 @@ The platform supports multiple tenants, each with their own API keys, category d
                                  │
                           ┌──────▼──────┐
                           │  Fastify    │  REST API + JWT Auth
-                          │  API :3000  │  Swagger UI at /docs
+                          │  API :3000  │
                           └──────┬──────┘
                                  │
                     ┌────────────┼────────────┐
@@ -78,7 +78,7 @@ Each pipeline stage is a BullMQ worker. Stages auto-enqueue the next stage on co
 | Layer | Technology |
 |-------|-----------|
 | **Runtime** | Node.js 20+, TypeScript 5.7, ESM modules |
-| **API** | Fastify 5, @fastify/jwt, @fastify/multipart, @fastify/swagger |
+| **API** | Fastify 5, @fastify/jwt, @fastify/multipart |
 | **Workers** | BullMQ 5 job queue on Redis 7 |
 | **Database** | PostgreSQL 16 with Prisma 6.3 ORM |
 | **AI/ML** | Google Gemini 2.0 Flash, @xenova/transformers (E5-small embeddings) |
@@ -187,7 +187,7 @@ This starts 7 services:
 |---------|------|---------|
 | PostgreSQL | 5432 | Database |
 | Redis | 6379 | Job queue & caching |
-| API | 3000 | REST API + Swagger |
+| API | 3000 | REST API |
 | Workers | — | Pipeline processing |
 | Admin UI | 8080 | Management dashboard |
 | Prometheus | 9091 | Metrics collection |
@@ -238,8 +238,6 @@ Groups questions by category and similarity group, produces per-category output 
 
 ## API Reference
 
-The API server provides Swagger UI at `/docs` when running.
-
 ### Authentication
 
 | Method | Endpoint | Description |
@@ -253,6 +251,7 @@ The API server provides Swagger UI at `/docs` when running.
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/tenants` | List all tenants |
+| GET | `/api/tenants/:id` | Get tenant details |
 | POST | `/api/tenants` | Create tenant |
 | PUT | `/api/tenants/:id` | Update tenant |
 | DELETE | `/api/tenants/:id` | Soft delete tenant |
@@ -273,7 +272,7 @@ The API server provides Swagger UI at `/docs` when running.
 | GET | `/api/pipelines` | List pipeline runs |
 | POST | `/api/pipelines` | Upload PDF & start pipeline |
 | GET | `/api/pipelines/:id` | Pipeline run detail |
-| POST | `/api/pipelines/:id/cancel` | Cancel pipeline run |
+| DELETE | `/api/pipelines/:id` | Cancel pipeline run |
 
 PDF upload supports files up to 100MB via multipart form data.
 
