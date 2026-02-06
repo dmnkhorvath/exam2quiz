@@ -1,0 +1,14 @@
+{
+  "threshold": 5,
+  "reporters": ["console"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ],
+  "absolute": true,
+  "gitignore": true,
+  "minLines": 10,
+  "pattern": "packages/*/src/**/*.ts"
+}
