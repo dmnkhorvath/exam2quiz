@@ -387,13 +387,21 @@ async function processCategorize(
       categorizedPath: outputPath,
     };
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+
     // Update job status to failed
     await db.pipelineJob.updateMany({
       where: { pipelineRunId, stage: PipelineStage.CATEGORIZE },
       data: {
         status: "FAILED",
-        errorMessage: err instanceof Error ? err.message : String(err),
+        errorMessage: errorMsg,
       },
+    });
+
+    // Mark pipeline run as failed
+    await db.pipelineRun.update({
+      where: { id: pipelineRunId },
+      data: { status: "FAILED", errorMessage: errorMsg },
     });
 
     throw err;

@@ -129,7 +129,13 @@ export async function pipelineRoutes(app: FastifyInstance) {
         db.pipelineRun.count({ where }),
       ]);
 
-      return { data: runs, total, limit, offset };
+      // Map errorMessage -> error for frontend compatibility
+      const data = runs.map(({ errorMessage, ...rest }) => ({
+        ...rest,
+        error: errorMessage ?? null,
+      }));
+
+      return { data, total, limit, offset };
     },
   });
 
@@ -157,7 +163,16 @@ export async function pipelineRoutes(app: FastifyInstance) {
         return reply.code(404).send({ error: "Pipeline run not found" });
       }
 
-      return run;
+      // Map errorMessage -> error for frontend compatibility
+      const { errorMessage, jobs, ...rest } = run;
+      return {
+        ...rest,
+        error: errorMessage ?? null,
+        jobs: jobs?.map(({ errorMessage: jobError, ...jobRest }) => ({
+          ...jobRest,
+          error: jobError ?? null,
+        })),
+      };
     },
   });
 

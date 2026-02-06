@@ -88,6 +88,7 @@ export default function PipelinesPage() {
                 <th>Status</th>
                 <th>Stage</th>
                 <th>Progress</th>
+                <th>Error</th>
                 <th>Created</th>
                 <th>Actions</th>
               </tr>
@@ -108,6 +109,9 @@ export default function PipelinesPage() {
                       value={p.progress}
                       max={100}
                     />
+                  </td>
+                  <td className="text-xs text-error max-w-48 truncate" title={p.error ?? undefined}>
+                    {p.error ?? "-"}
                   </td>
                   <td className="text-xs">
                     {new Date(p.createdAt).toLocaleString()}
@@ -132,7 +136,7 @@ export default function PipelinesPage() {
               ))}
               {runs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center text-base-content/60 py-8">
+                  <td colSpan={7} className="text-center text-base-content/60 py-8">
                     No pipeline runs
                   </td>
                 </tr>
@@ -236,7 +240,7 @@ function PipelineDetail({
                         max={100}
                       />
                       {j.error && (
-                        <span className="text-error text-xs truncate max-w-48">
+                        <span className="text-error text-xs break-all" title={j.error}>
                           {j.error}
                         </span>
                       )}

@@ -271,13 +271,21 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
     console.log(`[pdf-extract] Done: ${result.questions.length} questions from ${path.basename(pdfPath)}`);
     return { questionCount: result.questions.length, imagePaths };
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+
     // Update job status to failed
     await db.pipelineJob.updateMany({
       where: { pipelineRunId, stage: PipelineStage.PDF_EXTRACT },
       data: {
         status: "FAILED",
-        errorMessage: err instanceof Error ? err.message : String(err),
+        errorMessage: errorMsg,
       },
+    });
+
+    // Mark pipeline run as failed
+    await db.pipelineRun.update({
+      where: { id: pipelineRunId },
+      data: { status: "FAILED", errorMessage: errorMsg },
     });
 
     throw err;
