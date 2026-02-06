@@ -4,10 +4,10 @@ export interface QuestionsResponse {
   pipelineRunId: string;
   source: string;
   count: number;
-  questions: unknown;
+  questions: unknown[];
 }
 
 export const questionsApi = {
-  get: (pipelineRunId: string) =>
+  list: (pipelineRunId: string) =>
     api.get<QuestionsResponse>(`/questions?pipelineRunId=${pipelineRunId}`),
 };

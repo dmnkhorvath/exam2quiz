@@ -1,86 +1,100 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { pipelinesApi } from "../services/pipelines";
+import { pipelinesApi, type PipelineRun } from "../services/pipelines";
 import { questionsApi } from "../services/questions";
 
 export default function QuestionsPage() {
-  const [selectedRunId, setSelectedRunId] = useState("");
+  const [selectedRunId, setSelectedRunId] = useState<string>("");
 
-  const { data: pipelinesData, isLoading: loadingPipelines } = useQuery({
-    queryKey: ["pipelines", "COMPLETED"],
-    queryFn: () => pipelinesApi.list({ status: "COMPLETED", limit: 100 }),
+  const { data: pipelinesData, isLoading: pipelinesLoading } = useQuery({
+    queryKey: ["pipelines", { status: "COMPLETED", limit: 50 }],
+    queryFn: () => pipelinesApi.list({ status: "COMPLETED", limit: 50 }),
   });
 
   const {
     data: questionsData,
-    isLoading: loadingQuestions,
+    isLoading: questionsLoading,
     error: questionsError,
   } = useQuery({
     queryKey: ["questions", selectedRunId],
-    queryFn: () => questionsApi.get(selectedRunId),
+    queryFn: () => questionsApi.list(selectedRunId),
     enabled: !!selectedRunId,
   });
 
-  const runs = pipelinesData?.data ?? [];
+  const pipelines: PipelineRun[] = pipelinesData?.data ?? [];
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">Questions</h1>
 
-      <div className="flex items-center gap-4">
+      {/* Pipeline selector */}
+      <div className="form-control w-full max-w-md">
+        <label className="label">
+          <span className="label-text">Select a completed pipeline run</span>
+        </label>
         <select
-          className="select select-bordered select-sm w-96"
+          className="select select-bordered"
           value={selectedRunId}
           onChange={(e) => setSelectedRunId(e.target.value)}
+          disabled={pipelinesLoading}
         >
-          <option value="">Select a completed pipeline run...</option>
-          {loadingPipelines && <option disabled>Loading...</option>}
-          {runs.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.filename} ({new Date(r.createdAt).toLocaleDateString()})
+          <option value="">
+            {pipelinesLoading ? "Loading..." : "-- Choose pipeline --"}
+          </option>
+          {pipelines.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.filename ?? p.id} — {new Date(p.createdAt).toLocaleDateString()}
             </option>
           ))}
         </select>
-
-        {loadingQuestions && (
-          <span className="loading loading-spinner loading-sm" />
-        )}
       </div>
 
-      {questionsError && (
-        <div className="alert alert-error text-sm">
-          {questionsError instanceof Error
-            ? questionsError.message
-            : "Failed to load questions"}
+      {/* Loading state */}
+      {questionsLoading && (
+        <div className="flex items-center gap-2">
+          <span className="loading loading-spinner loading-sm" />
+          <span>Loading questions...</span>
         </div>
       )}
 
+      {/* Error state */}
+      {questionsError && (
+        <div className="alert alert-error">
+          <span>
+            {questionsError instanceof Error
+              ? questionsError.message
+              : "Failed to load questions"}
+          </span>
+        </div>
+      )}
+
+      {/* Questions data */}
       {questionsData && (
-        <div className="space-y-2">
-          <div className="flex gap-4 text-sm text-base-content/60">
-            <span>
-              Source: <span className="font-mono">{questionsData.source}</span>
-            </span>
-            <span>
-              Count: <span className="font-mono">{questionsData.count}</span>
-            </span>
+        <div className="space-y-4">
+          <div className="flex items-center gap-4 text-sm text-base-content/60">
+            <span>Source: {questionsData.source}</span>
+            <span>Count: {questionsData.count}</span>
           </div>
 
-          <pre className="bg-base-100 rounded-lg shadow p-4 overflow-auto max-h-[calc(100vh-16rem)] text-xs">
-            <code>{JSON.stringify(questionsData.questions, null, 2)}</code>
-          </pre>
+          <div className="mockup-code max-h-[70vh] overflow-auto">
+            <pre className="px-4">
+              <code>{JSON.stringify(questionsData.questions, null, 2)}</code>
+            </pre>
+          </div>
         </div>
       )}
 
-      {selectedRunId && !loadingQuestions && !questionsData && !questionsError && (
-        <div className="text-base-content/60 text-sm py-8 text-center">
-          No question data available for this pipeline run
+      {/* No data state (selected but nothing returned) */}
+      {selectedRunId && !questionsLoading && !questionsData && !questionsError && (
+        <div className="text-base-content/50 text-sm">
+          No question data available for this pipeline run.
         </div>
       )}
 
-      {!selectedRunId && (
-        <div className="text-base-content/60 text-sm py-8 text-center">
-          Select a completed pipeline run to view its questions
+      {/* Empty state */}
+      {!selectedRunId && !questionsLoading && (
+        <div className="text-base-content/50 text-sm">
+          Select a pipeline run to view its extracted questions.
         </div>
       )}
     </div>
