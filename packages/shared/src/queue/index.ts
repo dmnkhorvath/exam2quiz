@@ -4,8 +4,8 @@ import { PipelineStage } from "../types/index.js";
 
 // ─── Queue Names (tenant-namespaced) ───────────────────────────────
 export function getQueueName(stage: PipelineStage, tenantId?: string): string {
-  const base = `exams2quiz-${stage}`;
-  return tenantId ? `${base}-${tenantId}` : base;
+  const base = `exams2quiz:${stage}`;
+  return tenantId ? `${base}:${tenantId}` : base;
 }
 
 // ─── Queue Factory ─────────────────────────────────────────────────
