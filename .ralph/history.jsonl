@@ -26,3 +26,5 @@
 {"ts":"2026-02-06T19:42:38.343846Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
 {"ts":"2026-02-06T19:59:00.122873Z","type":{"kind":"loop_started","prompt":"when doing pipeline merge delete all similarity before similarity worker is starting it's task"}}
 {"ts":"2026-02-06T20:04:17.085062Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
+{"ts":"2026-02-06T21:14:32.977479Z","type":{"kind":"loop_started","prompt":"Recreate find_similar_questions.py script as a new worker to substitute current similarity worker"}}
+{"ts":"2026-02-06T21:20:58.355166Z","type":{"kind":"loop_completed","reason":"completion_promise"}}

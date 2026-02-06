@@ -1,5 +1,5 @@
 {
-  "pid": 47031,
-  "started": "2026-02-06T19:59:00.115078Z",
-  "prompt": "when doing pipeline merge delete all similarity before similarity worker is starting it's task"
+  "pid": 1250,
+  "started": "2026-02-06T21:14:32.967966Z",
+  "prompt": "Recreate find_similar_questions.py script as a new worker to substitute current similarity worker"
 }
