@@ -4,6 +4,7 @@ import { disconnectDb } from "@exams2quiz/shared/db";
 import { createPdfExtractWorker } from "./stages/pdf-extract.js";
 import { createGeminiParseWorker } from "./stages/gemini-parse.js";
 import { createCategorizeWorker } from "./stages/categorize.js";
+import { createSimilarityWorker } from "./stages/similarity.js";
 
 const config = getConfig();
 
@@ -16,8 +17,8 @@ const workers = [
   createPdfExtractWorker(),
   createGeminiParseWorker(),
   createCategorizeWorker(),
+  createSimilarityWorker(),
   // Future stages:
-  // createSimilarityWorker(),
   // createCategorySplitWorker(),
 ];
 
