@@ -36,6 +36,29 @@ export const pipelinesStartedTotal = new Counter({
   registers: [register],
 });
 
+export const filesDownloadedTotal = new Counter({
+  name: "files_downloaded_total",
+  help: "Total number of files ingested (uploads and URL downloads)",
+  labelNames: ["tenant_id", "source"] as const,
+  registers: [register],
+});
+
+export const pipelineFilesPerRun = new Histogram({
+  name: "pipeline_files_per_run",
+  help: "Number of files per pipeline run",
+  labelNames: ["tenant_id"] as const,
+  buckets: [1, 2, 3, 5, 10, 20, 50],
+  registers: [register],
+});
+
+export const urlDownloadDurationSeconds = new Histogram({
+  name: "url_download_duration_seconds",
+  help: "Duration of URL file downloads in seconds",
+  labelNames: ["tenant_id"] as const,
+  buckets: [0.1, 0.5, 1, 2.5, 5, 10, 30, 60],
+  registers: [register],
+});
+
 // ─── Metrics Fastify Plugin ──────────────────────────────────────
 export const metricsPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
   // Hook into every request to track metrics

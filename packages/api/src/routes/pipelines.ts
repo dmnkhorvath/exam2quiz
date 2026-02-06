@@ -1,14 +1,38 @@
 import type { FastifyInstance } from "fastify";
+import type { MultipartFile } from "@fastify/multipart";
 import { getDb } from "@exams2quiz/shared/db";
 import { addJob } from "@exams2quiz/shared/queue";
 import { PipelineStage } from "@exams2quiz/shared/types";
 import { getConfig } from "@exams2quiz/shared/config";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
-import { pipelinesStartedTotal } from "../plugins/metrics.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, basename } from "node:path";
+import { createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import {
+  pipelinesStartedTotal,
+  filesDownloadedTotal,
+  pipelineFilesPerRun,
+  urlDownloadDurationSeconds,
+} from "../plugins/metrics.js";
+
+/**
+ * Sanitize a filename derived from a URL path.
+ * Strips query/hash, keeps only the basename, and falls back to a default.
+ */
+function filenameFromUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    const name = basename(parsed.pathname);
+    // Strip non-safe chars
+    const sanitized = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    return sanitized && sanitized !== "_" ? sanitized : "download.pdf";
+  } catch {
+    return "download.pdf";
+  }
+}
 
 export async function pipelineRoutes(app: FastifyInstance) {
-  // POST /api/pipelines — start a new pipeline run (with PDF upload)
+  // POST /api/pipelines — start a new pipeline run (multi-file upload + URL download)
   app.post("/api/pipelines", {
     preHandler: [app.authenticate],
     handler: async (request, reply) => {
@@ -34,37 +58,134 @@ export async function pipelineRoutes(app: FastifyInstance) {
         return reply.code(429).send({ error: "Maximum concurrent pipelines reached" });
       }
 
-      // Handle file upload
-      const file = await request.file();
-      if (!file) {
-        return reply.code(400).send({ error: "PDF file is required" });
-      }
-      if (file.mimetype !== "application/pdf") {
-        return reply.code(400).send({ error: "Only PDF files are accepted" });
-      }
-
-      // Create pipeline run
+      // Create pipeline run first to get an ID for the upload directory
       const pipelineRun = await db.pipelineRun.create({
         data: {
           tenantId,
           status: "QUEUED",
-          filenames: [file.filename],
+          filenames: [],
+          sourceUrls: [],
           currentStage: PipelineStage.PDF_EXTRACT,
-          totalPdfs: 1,
+          totalPdfs: 0,
         },
       });
 
-      // Save uploaded PDF
       const uploadDir = join(config.UPLOAD_DIR, tenantId, pipelineRun.id);
       await mkdir(uploadDir, { recursive: true });
-      const pdfPath = join(uploadDir, file.filename);
 
-      const { createWriteStream } = await import("node:fs");
-      await new Promise<void>((resolve, reject) => {
-        const ws = createWriteStream(pdfPath);
-        file.file.pipe(ws);
-        ws.on("finish", resolve);
-        ws.on("error", reject);
+      const allFilenames: string[] = [];
+      const allPdfPaths: string[] = [];
+      const allSourceUrls: string[] = [];
+      let urlsText = "";
+
+      // Process multipart parts (files + fields)
+      const parts = request.parts();
+      for await (const part of parts) {
+        if (part.type === "file") {
+          const filePart = part as MultipartFile;
+          if (filePart.mimetype !== "application/pdf") {
+            // Clean up the created run on validation error
+            await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
+            return reply.code(400).send({ error: `File "${filePart.filename}" is not a PDF` });
+          }
+
+          const pdfPath = join(uploadDir, filePart.filename);
+          await pipeline(filePart.file, createWriteStream(pdfPath));
+
+          allFilenames.push(filePart.filename);
+          allPdfPaths.push(pdfPath);
+          filesDownloadedTotal.inc({ tenant_id: tenantId, source: "upload" });
+        } else {
+          // Field part
+          if (part.fieldname === "urls") {
+            urlsText = (part as { value: string }).value;
+          }
+        }
+      }
+
+      // Process URLs from the urls field
+      if (urlsText.trim()) {
+        const urls = urlsText
+          .split("\n")
+          .map((u) => u.trim())
+          .filter((u) => u.length > 0);
+
+        for (const rawUrl of urls) {
+          // Validate URL
+          let parsedUrl: URL;
+          try {
+            parsedUrl = new URL(rawUrl);
+            if (!parsedUrl.protocol.startsWith("http")) {
+              throw new Error("Not HTTP(S)");
+            }
+          } catch {
+            await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
+            return reply.code(400).send({ error: `Invalid URL: ${rawUrl}` });
+          }
+
+          // Download the file
+          const downloadStart = performance.now();
+          let response: Response;
+          try {
+            response = await fetch(parsedUrl.href);
+          } catch (err) {
+            await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
+            return reply.code(400).send({
+              error: `Failed to download URL: ${rawUrl} — ${err instanceof Error ? err.message : "unknown error"}`,
+            });
+          }
+          const downloadDuration = (performance.now() - downloadStart) / 1000;
+          urlDownloadDurationSeconds.observe({ tenant_id: tenantId }, downloadDuration);
+
+          if (!response.ok) {
+            await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
+            return reply.code(400).send({
+              error: `URL returned HTTP ${response.status}: ${rawUrl}`,
+            });
+          }
+
+          // Derive filename and save
+          let filename = filenameFromUrl(rawUrl);
+          // Ensure .pdf extension
+          if (!filename.toLowerCase().endsWith(".pdf")) {
+            filename += ".pdf";
+          }
+          // Deduplicate filenames within the same run
+          let deduped = filename;
+          let counter = 1;
+          while (allFilenames.includes(deduped)) {
+            const ext = ".pdf";
+            const stem = filename.slice(0, -ext.length);
+            deduped = `${stem}_${counter}${ext}`;
+            counter++;
+          }
+          filename = deduped;
+
+          const pdfPath = join(uploadDir, filename);
+          const arrayBuffer = await response.arrayBuffer();
+          await writeFile(pdfPath, Buffer.from(arrayBuffer));
+
+          allFilenames.push(filename);
+          allPdfPaths.push(pdfPath);
+          allSourceUrls.push(rawUrl);
+          filesDownloadedTotal.inc({ tenant_id: tenantId, source: "url" });
+        }
+      }
+
+      // Validate at least one file
+      if (allPdfPaths.length === 0) {
+        await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
+        return reply.code(400).send({ error: "At least one PDF file or URL is required" });
+      }
+
+      // Update pipeline run with actual file info
+      await db.pipelineRun.update({
+        where: { id: pipelineRun.id },
+        data: {
+          filenames: allFilenames,
+          sourceUrls: allSourceUrls,
+          totalPdfs: allPdfPaths.length,
+        },
       });
 
       // Create pipeline job record
@@ -83,7 +204,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
       const bullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
         tenantId,
         pipelineRunId: pipelineRun.id,
-        pdfPaths: [pdfPath],
+        pdfPaths: allPdfPaths,
         outputDir,
       });
 
@@ -94,11 +215,14 @@ export async function pipelineRoutes(app: FastifyInstance) {
       });
 
       pipelinesStartedTotal.inc({ tenant_id: tenantId });
+      pipelineFilesPerRun.observe({ tenant_id: tenantId }, allPdfPaths.length);
 
       return reply.code(201).send({
         id: pipelineRun.id,
-        status: pipelineRun.status,
-        currentStage: pipelineRun.currentStage,
+        status: "QUEUED",
+        currentStage: PipelineStage.PDF_EXTRACT,
+        totalPdfs: allPdfPaths.length,
+        filenames: allFilenames,
         createdAt: pipelineRun.createdAt,
       });
     },
