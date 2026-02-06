@@ -1,5 +1,5 @@
 {
-  "pid": 68745,
-  "started": "2026-02-06T18:33:34.516978Z",
-  "prompt": "similarity worker does not use tenant's category list but the config/categoris.json file that is a b..."
+  "pid": 84877,
+  "started": "2026-02-06T18:48:23.676989Z",
+  "prompt": "as i see now when i upload a pdf, it will be put in the pipeline each pipeline run per tenant is sto..."
 }
