@@ -24,18 +24,7 @@ const GEMINI_MODEL = "gemini-2.0-flash";
 const MAX_RETRIES = 3;
 const CONCURRENCY_LIMIT = 10;
 
-const CATEGORY_GUIDELINES = `Category guidelines:
-- "Általános anatómia és kortan": General anatomy, body types, cell biology, health factors, pathology basics
-- "A mozgás szerv rendszere": Bones, muscles, joints, spine, limbs, musculoskeletal diseases
-- "Keringés": Heart, blood vessels, blood, circulation, cardiovascular diseases
-- "Légzőrendszer": Lungs, respiratory tract, breathing, respiratory diseases
-- "Idegrendszer": Brain, spinal cord, nerves, neurological diseases, reflexes
-- "Kiválasztás szervrendszere": Kidneys, urinary system, urine, excretion
-- "Szaporodás szervrendszere": Reproductive organs, pregnancy, sexual development
-- "A neuroendokrin rendszer": Hormones, glands (thyroid, pituitary, adrenal), endocrine diseases
-- "Az érzékszervek és emlő": Eyes, ears, skin sensation, breast anatomy and diseases
-- "Elsősegélynyújtás": First aid, emergency care, resuscitation, trauma care
-- "Emésztés": Digestive system, stomach, intestines, liver, nutrition, vitamins`;
+// Category guidelines are now derived dynamically from tenant DB categories
 
 // ─── Result types ─────────────────────────────────────────────────
 interface ParsedQuestionEntry {
@@ -88,9 +77,7 @@ Rules:
 - Choose the SINGLE most appropriate category based on the question content
 - Return ONLY the category name exactly as written above
 - If a question spans multiple topics, choose the PRIMARY topic
-- Consider both the question text and the correct answer when categorizing
-
-${CATEGORY_GUIDELINES}`;
+- Consider both the question text and the correct answer when categorizing`;
 }
 
 // ─── Build response schema from categories ────────────────────────
@@ -278,7 +265,7 @@ async function processCategorize(
   categorizedQuestions: number;
   categorizedPath: string;
 }> {
-  const { tenantId, pipelineRunId, parsedQuestionsPath, categoriesConfigPath, outputPath } =
+  const { tenantId, pipelineRunId, parsedQuestionsPath, outputPath } =
     job.data;
   const db = getDb();
 
@@ -291,13 +278,74 @@ async function processCategorize(
   });
 
   try {
-    // Load categories config
-    const categoriesRaw = await readFile(categoriesConfigPath, "utf-8");
-    const categories: Category[] = JSON.parse(categoriesRaw);
+    // Load tenant-specific categories from DB
+    const tenantCategories = await db.tenantCategory.findMany({
+      where: { tenantId },
+      orderBy: { sortOrder: "asc" },
+    });
+    const categories: Category[] = tenantCategories.map((tc) => ({
+      key: tc.key,
+      name: tc.name,
+      file: tc.file,
+    }));
 
     // Load parsed questions
     const parsedRaw = await readFile(parsedQuestionsPath, "utf-8");
     const allQuestions: ParsedQuestionEntry[] = JSON.parse(parsedRaw);
+
+    // If tenant has no categories, skip categorization entirely
+    if (categories.length === 0) {
+      logStageEvent("categorize", "info", "no_tenant_categories", "Tenant has no categories, skipping categorization", { tenantId, pipelineRunId });
+
+      // Pass questions through with empty categorization
+      const passthrough: CategorizedQuestionEntry[] = allQuestions.map((q) => ({
+        ...q,
+        categorization: { success: false, error: "No categories configured for tenant" },
+      }));
+
+      await writeFile(outputPath, JSON.stringify(passthrough, null, 2), "utf-8");
+
+      const skipResult = {
+        totalQuestions: allQuestions.length,
+        categorizedQuestions: 0,
+        categorizedPath: outputPath,
+      };
+
+      await db.pipelineJob.updateMany({
+        where: { pipelineRunId, stage: PipelineStage.CATEGORIZE },
+        data: {
+          status: "COMPLETED",
+          progress: 100,
+          completedAt: new Date(),
+          result: skipResult,
+        },
+      });
+
+      // Enqueue next stage so pipeline continues
+      const nextJobData: SimilarityJobData = {
+        tenantId,
+        pipelineRunId,
+        inputPath: outputPath,
+        outputPath: path.join(path.dirname(outputPath), "similarity.json"),
+      };
+      await addJob(
+        PipelineStage.SIMILARITY,
+        nextJobData as unknown as Record<string, unknown>,
+      );
+      await db.pipelineJob.create({
+        data: {
+          pipelineRunId,
+          stage: PipelineStage.SIMILARITY,
+          status: "PENDING",
+        },
+      });
+      await db.pipelineRun.update({
+        where: { id: pipelineRunId },
+        data: { currentStage: PipelineStage.SIMILARITY },
+      });
+
+      return skipResult;
+    }
 
     // Filter to only successful parses with data
     const validQuestions = allQuestions.filter((q) => q.success && q.data);

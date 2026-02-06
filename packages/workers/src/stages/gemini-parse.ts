@@ -285,11 +285,6 @@ async function processGeminiParse(
       tenantId,
       pipelineRunId,
       parsedQuestionsPath: parsedPath,
-      categoriesConfigPath: path.join(
-        process.cwd(),
-        "config",
-        "categories.json",
-      ),
       outputPath: path.join(firstImageDir, "categorized.json"),
     };
     await addJob(

@@ -752,11 +752,6 @@ async function processSimilarity(
         tenantId,
         pipelineRunId,
         inputPath: outputPath,
-        categoriesConfigPath: path.join(
-          process.cwd(),
-          "config",
-          "categories.json",
-        ),
         outputDir: path.join(path.dirname(outputPath), "split"),
       };
       await addJob(
@@ -834,11 +829,6 @@ async function processSimilarity(
       tenantId,
       pipelineRunId,
       inputPath: outputPath,
-      categoriesConfigPath: path.join(
-        process.cwd(),
-        "config",
-        "categories.json",
-      ),
       outputDir: path.join(path.dirname(outputPath), "split"),
     };
     await addJob(

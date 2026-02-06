@@ -102,7 +102,6 @@ export interface CategorizeJobData {
   tenantId: string;
   pipelineRunId: string;
   parsedQuestionsPath: string;
-  categoriesConfigPath: string;
   outputPath: string;
 }
 
@@ -119,7 +118,6 @@ export interface CategorySplitJobData {
   tenantId: string;
   pipelineRunId: string;
   inputPath: string;
-  categoriesConfigPath: string;
   outputDir: string;
 }
 
