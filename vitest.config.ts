@@ -1,6 +1,27 @@
 import { defineConfig } from "vitest/config";
+import path from "node:path";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@exams2quiz/shared/types": path.resolve(
+        __dirname,
+        "packages/shared/src/types/index.ts",
+      ),
+      "@exams2quiz/shared/config": path.resolve(
+        __dirname,
+        "packages/shared/src/config/index.ts",
+      ),
+      "@exams2quiz/shared/queue": path.resolve(
+        __dirname,
+        "packages/shared/src/queue/index.ts",
+      ),
+      "@exams2quiz/shared/db": path.resolve(
+        __dirname,
+        "packages/shared/src/db/index.ts",
+      ),
+    },
+  },
   test: {
     globals: true,
     environment: "node",

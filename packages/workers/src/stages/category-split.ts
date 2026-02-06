@@ -9,6 +9,7 @@ import {
 import { getConfig } from "@exams2quiz/shared/config";
 import { createWorker } from "@exams2quiz/shared/queue";
 import { getDb } from "@exams2quiz/shared/db";
+import { logStageEvent, trackPipelineRunCompleted } from "../metrics.js";
 
 // ─── Hungarian → English transliteration map ─────────────────────
 const HU_TO_EN: Record<string, string> = {
@@ -92,9 +93,7 @@ async function processCategorySplit(
   const { tenantId, pipelineRunId, inputPath, outputDir } = job.data;
   const db = getDb();
 
-  console.log(
-    `[category-split] Processing ${inputPath} (tenant: ${tenantId})`,
-  );
+  logStageEvent("category-split", "info", "job_started", `Processing ${inputPath}`, { tenantId, pipelineRunId });
 
   // Update job status to active
   await db.pipelineJob.updateMany({
@@ -128,9 +127,10 @@ async function processCategorySplit(
       }
     }
 
-    console.log(
-      `[category-split] ${categories.size} categories, ${skipped} skipped (no category)`,
-    );
+    logStageEvent("category-split", "info", "categories_grouped", `${categories.size} categories, ${skipped} skipped`, { categoryCount: categories.size, skippedCount: skipped });
+    if (skipped > 0) {
+      logStageEvent("category-split", "warn", "questions_without_category", `${skipped} questions had no category`, { skippedCount: skipped });
+    }
 
     await job.updateProgress(30);
 
@@ -168,9 +168,7 @@ async function processCategorySplit(
         data: { progress },
       });
 
-      console.log(
-        `[category-split]   ${categoryName}: ${items.length} questions, ${grouped.length} groups → ${filename}`,
-      );
+      logStageEvent("category-split", "info", "category_written", `${categoryName}: ${items.length} questions, ${grouped.length} groups`, { category: categoryName, questionCount: items.length, groupCount: grouped.length });
     }
 
     await job.updateProgress(95);
@@ -201,15 +199,16 @@ async function processCategorySplit(
         completedAt: new Date(),
       },
     });
+    trackPipelineRunCompleted("completed");
 
     await job.updateProgress(100);
 
-    console.log(
-      `[category-split] Done: ${written} categories written, pipeline run completed`,
-    );
+    logStageEvent("category-split", "info", "job_completed", `${written} categories written, pipeline run completed`, { pipelineRunId, categoriesWritten: written, totalQuestions: data.length });
     return result;
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    logStageEvent("category-split", "error", "job_failed", errorMsg, { pipelineRunId });
+    trackPipelineRunCompleted("failed");
 
     // Update job status to failed
     await db.pipelineJob.updateMany({

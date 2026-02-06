@@ -5,6 +5,7 @@ import { PipelineStage } from "@exams2quiz/shared/types";
 import { getConfig } from "@exams2quiz/shared/config";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { pipelinesStartedTotal } from "../plugins/metrics.js";
 
 export async function pipelineRoutes(app: FastifyInstance) {
   // POST /api/pipelines — start a new pipeline run (with PDF upload)
@@ -91,6 +92,8 @@ export async function pipelineRoutes(app: FastifyInstance) {
         where: { id: job.id },
         data: { bullmqJobId },
       });
+
+      pipelinesStartedTotal.inc({ tenant_id: tenantId });
 
       return reply.code(201).send({
         id: pipelineRun.id,

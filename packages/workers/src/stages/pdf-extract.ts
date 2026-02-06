@@ -8,6 +8,7 @@ import { PipelineStage, type PdfExtractJobData, type GeminiParseJobData } from "
 import { getConfig } from "@exams2quiz/shared/config";
 import { createWorker, addJob } from "@exams2quiz/shared/queue";
 import { getDb } from "@exams2quiz/shared/db";
+import { logStageEvent, trackQuestionProcessed } from "../metrics.js";
 
 // ─── Constants ────────────────────────────────────────────────────
 // "X pont" pattern — Hungarian for "X points", used as question delimiters
@@ -178,7 +179,8 @@ async function extractQuestionsFromPdf(
             preview: q.lineText,
           });
         } catch (err) {
-          console.error(`[pdf-extract] Failed to render question ${questionCounter} on page ${pageNum + 1}:`, err);
+          logStageEvent("pdf-extract", "error", "question_render_failed", `Failed to render question ${questionCounter} on page ${pageNum + 1}`, { error: String(err) });
+          trackQuestionProcessed("pdf-extract", false);
         }
       }
     }
@@ -203,12 +205,18 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
   const { tenantId, pipelineRunId, pdfPath, outputDir, dpi = 150 } = job.data;
   const db = getDb();
 
-  console.log(`[pdf-extract] Processing: ${path.basename(pdfPath)} (tenant: ${tenantId})`);
+  logStageEvent("pdf-extract", "info", "job_started", `Processing ${path.basename(pdfPath)}`, { tenantId, pipelineRunId });
 
   // Update job status to active
   await db.pipelineJob.updateMany({
     where: { pipelineRunId, stage: PipelineStage.PDF_EXTRACT },
     data: { status: "ACTIVE", startedAt: new Date() },
+  });
+
+  // Mark pipeline run as RUNNING (first stage starting)
+  await db.pipelineRun.update({
+    where: { id: pipelineRunId },
+    data: { status: "RUNNING", startedAt: new Date() },
   });
 
   try {
@@ -243,6 +251,14 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
       },
     });
 
+    // Track extracted questions
+    for (const _q of result.questions) {
+      trackQuestionProcessed("pdf-extract", true);
+    }
+    if (imagePaths.length === 0) {
+      logStageEvent("pdf-extract", "warn", "no_questions_found", `No questions extracted from ${path.basename(pdfPath)}`, { pipelineRunId });
+    }
+
     // Enqueue next stage: gemini-parse
     if (imagePaths.length > 0) {
       const nextJobData: GeminiParseJobData = {
@@ -268,10 +284,11 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
       });
     }
 
-    console.log(`[pdf-extract] Done: ${result.questions.length} questions from ${path.basename(pdfPath)}`);
+    logStageEvent("pdf-extract", "info", "job_completed", `Extracted ${result.questions.length} questions from ${path.basename(pdfPath)}`, { pipelineRunId, questionCount: result.questions.length });
     return { questionCount: result.questions.length, imagePaths };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    logStageEvent("pdf-extract", "error", "job_failed", errorMsg, { pipelineRunId });
 
     // Update job status to failed
     await db.pipelineJob.updateMany({
