@@ -69,6 +69,7 @@ const PARSE_RESPONSE_SCHEMA = {
 // ─── Result types ─────────────────────────────────────────────────
 interface ParseResult {
   file: string;
+  source_pdf?: string;
   success: boolean;
   data?: {
     question_number: string;
@@ -251,13 +252,17 @@ async function processGeminiParse(
       },
     );
 
-    // Determine output path — save parsed.json next to the images
-    // Images from pdf-extract are in outputDir/<pdfStem>/ subfolders
-    // We write parsed.json to the same directory as the first image
-    const firstImageDir = imagePaths.length > 0
-      ? path.dirname(imagePaths[0])
-      : outputDir;
-    const parsedPath = path.join(firstImageDir, "parsed.json");
+    // Add source_pdf to each result (derived from image's parent directory name)
+    for (const result of results) {
+      const imgPath = imagePaths.find((p) => path.basename(p) === result.file);
+      if (imgPath) {
+        result.source_pdf = path.basename(path.dirname(imgPath));
+      }
+    }
+
+    // Save merged parsed.json at run-level outputDir (not inside a PDF subfolder)
+    // so all questions from all PDFs are in one file for downstream stages
+    const parsedPath = path.join(outputDir, "parsed.json");
 
     await writeFile(parsedPath, JSON.stringify(results, null, 2), "utf-8");
 
@@ -285,7 +290,7 @@ async function processGeminiParse(
       tenantId,
       pipelineRunId,
       parsedQuestionsPath: parsedPath,
-      outputPath: path.join(firstImageDir, "categorized.json"),
+      outputPath: path.join(outputDir, "categorized.json"),
     };
     await addJob(
       PipelineStage.CATEGORIZE,
