@@ -7,6 +7,7 @@ import TenantsPage from "./pages/TenantsPage";
 import UsersPage from "./pages/UsersPage";
 import PipelinesPage from "./pages/PipelinesPage";
 import CategoriesPage from "./pages/CategoriesPage";
+import SettingsPage from "./pages/SettingsPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -79,6 +80,14 @@ export default function App() {
         />
         <Route path="/pipelines" element={<PipelinesPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
+        <Route
+          path="/settings"
+          element={
+            <RequireRole roles={["TENANT_ADMIN", "TENANT_USER"]}>
+              <SettingsPage />
+            </RequireRole>
+          }
+        />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

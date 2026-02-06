@@ -11,6 +11,7 @@ import { tenantRoutes } from "./routes/tenants.js";
 import { userRoutes } from "./routes/users.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
 import { categoryRoutes } from "./routes/categories.js";
+import { tenantSettingsRoutes } from "./routes/tenant-settings.js";
 
 const config = getConfig();
 
@@ -45,6 +46,7 @@ async function start() {
   await app.register(userRoutes);
   await app.register(pipelineRoutes);
   await app.register(categoryRoutes);
+  await app.register(tenantSettingsRoutes);
 
   // Start metrics server on separate port
   await startMetricsServer();
