@@ -4,7 +4,7 @@ import { getDb } from "@exams2quiz/shared/db";
 import { addJob } from "@exams2quiz/shared/queue";
 import { PipelineStage } from "@exams2quiz/shared/types";
 import { getConfig } from "@exams2quiz/shared/config";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, rm, readFile } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
@@ -330,6 +330,175 @@ export async function pipelineRoutes(app: FastifyInstance) {
       });
 
       return reply.code(204).send();
+    },
+  });
+
+  // DELETE /api/pipelines/:id/delete — permanently delete pipeline run, jobs, and files
+  app.delete<{ Params: { id: string } }>("/api/pipelines/:id/delete", {
+    preHandler: [app.authenticate],
+    handler: async (request, reply) => {
+      const db = getDb();
+      const config = getConfig();
+      const { role, tenantId } = request.user;
+
+      const run = await db.pipelineRun.findUnique({ where: { id: request.params.id } });
+      if (!run) {
+        return reply.code(404).send({ error: "Pipeline run not found" });
+      }
+
+      if (role !== "SUPER_ADMIN" && run.tenantId !== tenantId) {
+        return reply.code(404).send({ error: "Pipeline run not found" });
+      }
+
+      // Only allow deleting terminal-state pipelines
+      const deletableStatuses = ["COMPLETED", "FAILED", "CANCELLED"];
+      if (!deletableStatuses.includes(run.status)) {
+        return reply.code(400).send({
+          error: `Cannot delete a ${run.status.toLowerCase()} pipeline. Only completed, failed, or cancelled pipelines can be deleted.`,
+        });
+      }
+
+      // Delete pipeline jobs first (FK constraint)
+      await db.pipelineJob.deleteMany({ where: { pipelineRunId: run.id } });
+
+      // Delete pipeline run
+      await db.pipelineRun.delete({ where: { id: run.id } });
+
+      // Remove output files
+      const outputDir = join(config.OUTPUT_DIR, run.tenantId, run.id);
+      await rm(outputDir, { recursive: true, force: true });
+
+      // Remove uploaded files
+      const uploadDir = join(config.UPLOAD_DIR, run.tenantId, run.id);
+      await rm(uploadDir, { recursive: true, force: true });
+
+      return reply.code(204).send();
+    },
+  });
+
+  // POST /api/pipelines/merge — merge multiple completed pipelines into a new one
+  app.post<{ Body: { pipelineRunIds: string[] } }>("/api/pipelines/merge", {
+    preHandler: [app.authenticate],
+    handler: async (request, reply) => {
+      const db = getDb();
+      const config = getConfig();
+      const { role, tenantId } = request.user;
+
+      if (!tenantId) {
+        return reply.code(400).send({ error: "User must belong to a tenant to merge pipelines" });
+      }
+
+      const { pipelineRunIds } = request.body;
+
+      if (!Array.isArray(pipelineRunIds) || pipelineRunIds.length < 2) {
+        return reply.code(400).send({ error: "At least 2 pipeline run IDs are required" });
+      }
+
+      // Fetch all specified pipeline runs
+      const runs = await db.pipelineRun.findMany({
+        where: { id: { in: pipelineRunIds } },
+      });
+
+      if (runs.length !== pipelineRunIds.length) {
+        return reply.code(404).send({ error: "One or more pipeline runs not found" });
+      }
+
+      // Validate all belong to the same tenant and user has access
+      for (const run of runs) {
+        if (role !== "SUPER_ADMIN" && run.tenantId !== tenantId) {
+          return reply.code(403).send({ error: "Access denied to one or more pipeline runs" });
+        }
+        if (run.status !== "COMPLETED") {
+          return reply.code(400).send({
+            error: `Pipeline ${run.id} is not completed (status: ${run.status.toLowerCase()}). Only completed pipelines can be merged.`,
+          });
+        }
+      }
+
+      // All runs should belong to the same tenant
+      const runTenantId = runs[0].tenantId;
+      if (!runs.every((r) => r.tenantId === runTenantId)) {
+        return reply.code(400).send({ error: "All pipeline runs must belong to the same tenant" });
+      }
+
+      // Read and merge parsed.json from each pipeline run
+      const mergedQuestions: unknown[] = [];
+      const sourceFilenames: string[] = [];
+
+      for (const run of runs) {
+        const parsedPath = join(config.OUTPUT_DIR, run.tenantId, run.id, "parsed.json");
+        try {
+          const content = await readFile(parsedPath, "utf-8");
+          const parsed = JSON.parse(content) as unknown[];
+          mergedQuestions.push(...parsed);
+        } catch {
+          return reply.code(400).send({
+            error: `Could not read parsed data from pipeline ${run.id}. Its output files may have been deleted.`,
+          });
+        }
+        const filenames = (run.filenames as string[] | null) ?? [];
+        sourceFilenames.push(...filenames);
+      }
+
+      if (mergedQuestions.length === 0) {
+        return reply.code(400).send({ error: "No questions found in the selected pipelines" });
+      }
+
+      // Create new pipeline run starting at categorize stage
+      const newRun = await db.pipelineRun.create({
+        data: {
+          tenantId: runTenantId,
+          status: "QUEUED",
+          filenames: sourceFilenames,
+          sourceUrls: [],
+          currentStage: PipelineStage.CATEGORIZE,
+          totalPdfs: sourceFilenames.length,
+          totalQuestions: mergedQuestions.length,
+        },
+      });
+
+      // Create output directory and write merged parsed.json
+      const outputDir = join(config.OUTPUT_DIR, runTenantId, newRun.id);
+      await mkdir(outputDir, { recursive: true });
+
+      const parsedPath = join(outputDir, "parsed.json");
+      await writeFile(parsedPath, JSON.stringify(mergedQuestions, null, 2));
+
+      // Create pipeline job record for categorize stage
+      const job = await db.pipelineJob.create({
+        data: {
+          pipelineRunId: newRun.id,
+          stage: PipelineStage.CATEGORIZE,
+          status: "PENDING",
+        },
+      });
+
+      // Enqueue categorize job
+      const categorizedPath = join(outputDir, "categorized.json");
+      const bullmqJobId = await addJob(PipelineStage.CATEGORIZE, {
+        tenantId: runTenantId,
+        pipelineRunId: newRun.id,
+        parsedQuestionsPath: parsedPath,
+        outputPath: categorizedPath,
+      });
+
+      // Update job with BullMQ ID
+      await db.pipelineJob.update({
+        where: { id: job.id },
+        data: { bullmqJobId },
+      });
+
+      pipelinesStartedTotal.inc({ tenant_id: runTenantId });
+
+      return reply.code(201).send({
+        id: newRun.id,
+        status: "QUEUED",
+        currentStage: PipelineStage.CATEGORIZE,
+        totalQuestions: mergedQuestions.length,
+        filenames: sourceFilenames,
+        mergedFrom: pipelineRunIds,
+        createdAt: newRun.createdAt,
+      });
     },
   });
 }
