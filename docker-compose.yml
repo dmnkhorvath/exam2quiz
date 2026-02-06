@@ -3,24 +3,36 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: exams2quiz
-      POSTGRES_PASSWORD: exams2quiz
-      POSTGRES_DB: exams2quiz
+      POSTGRES_USER: ${POSTGRES_USER:-exams2quiz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-exams2quiz}
+      POSTGRES_DB: ${POSTGRES_DB:-exams2quiz}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U exams2quiz"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-exams2quiz}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ─── Redis ────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -28,6 +40,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ─── API Server ───────────────────────────────────────────────────
   api:
@@ -35,17 +55,17 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     ports:
-      - "3000:3000"
-      - "9090:9090"
+      - "${API_PORT:-3000}:3000"
+      - "${METRICS_PORT:-9090}:9090"
     environment:
-      DATABASE_URL: postgresql://exams2quiz:exams2quiz@postgres:5432/exams2quiz
+      DATABASE_URL: postgresql://${POSTGRES_USER:-exams2quiz}:${POSTGRES_PASSWORD:-exams2quiz}@postgres:5432/${POSTGRES_DB:-exams2quiz}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       API_HOST: "0.0.0.0"
       API_PORT: "3000"
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      NODE_ENV: production
-      LOG_LEVEL: info
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       UPLOAD_DIR: /data/uploads
       OUTPUT_DIR: /data/output
       METRICS_PORT: "9090"
@@ -57,6 +77,21 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - backend
+      - frontend
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   # ─── Workers ──────────────────────────────────────────────────────
   workers:
@@ -64,13 +99,13 @@ services:
       context: .
       dockerfile: docker/workers.Dockerfile
     environment:
-      DATABASE_URL: postgresql://exams2quiz:exams2quiz@postgres:5432/exams2quiz
+      DATABASE_URL: postgresql://${POSTGRES_USER:-exams2quiz}:${POSTGRES_PASSWORD:-exams2quiz}@postgres:5432/${POSTGRES_DB:-exams2quiz}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      WORKER_CONCURRENCY: "3"
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-3}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      NODE_ENV: production
-      LOG_LEVEL: info
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       UPLOAD_DIR: /data/uploads
       OUTPUT_DIR: /data/output
     volumes:
@@ -81,6 +116,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   # ─── Admin UI (Nginx + SPA) ──────────────────────────────────────
   admin-ui:
@@ -88,26 +133,50 @@ services:
       context: .
       dockerfile: docker/admin-ui.Dockerfile
     ports:
-      - "8080:80"
+      - "${ADMIN_PORT:-8080}:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - frontend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ─── Prometheus ───────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v3.2.0
     ports:
-      - "9091:9090"
+      - "${PROMETHEUS_PORT:-9091}:9090"
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+      - monitoring
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ─── Grafana ──────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:11.5.1
     ports:
-      - "3001:3000"
+      - "${GRAFANA_PORT:-3001}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
@@ -118,6 +187,23 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+    restart: unless-stopped
+    networks:
+      - monitoring
+      - frontend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+  monitoring:
+    driver: bridge
 
 volumes:
   postgres-data:

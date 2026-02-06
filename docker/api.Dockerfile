@@ -11,6 +11,7 @@ COPY tsconfig.base.json ./
 COPY packages/shared/ packages/shared/
 COPY packages/api/ packages/api/
 
+RUN npx prisma generate --schema=packages/shared/prisma/schema.prisma
 RUN npm run build -w packages/shared && npm run build -w packages/api
 
 # ─── Production ─────────────────────────────────────────────────────
@@ -25,7 +26,9 @@ COPY --from=builder /app/packages/api/package.json packages/api/
 COPY --from=builder /app/packages/api/dist packages/api/dist/
 COPY --from=builder /app/node_modules node_modules/
 
-RUN mkdir -p /data/uploads /data/output
+COPY docker/api-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && mkdir -p /data/uploads /data/output
 
 EXPOSE 3000 9090
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "packages/api/dist/index.js"]
