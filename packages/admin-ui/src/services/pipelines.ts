@@ -51,4 +51,10 @@ export const pipelinesApi = {
   },
 
   cancel: (id: string) => api.delete<void>(`/pipelines/${id}`),
+
+  deletePipeline: (id: string) =>
+    api.delete<void>(`/pipelines/${id}/delete`),
+
+  merge: (pipelineRunIds: string[]) =>
+    api.post<PipelineRun>("/pipelines/merge", { pipelineRunIds }),
 };

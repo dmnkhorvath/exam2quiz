@@ -9,6 +9,7 @@ export default function PipelinesPage() {
   const [detail, setDetail] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [urls, setUrls] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
     queryKey: ["pipelines", filter],
@@ -38,7 +39,36 @@ export default function PipelinesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pipelines"] }),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => pipelinesApi.deletePipeline(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["pipelines"] });
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    },
+  });
+
+  const mergeMut = useMutation({
+    mutationFn: (ids: string[]) => pipelinesApi.merge(ids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pipelines"] });
+      setSelectedIds(new Set());
+    },
+  });
+
   const runs = data?.data ?? [];
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <div className="p-6 space-y-4">
@@ -95,6 +125,39 @@ export default function PipelinesPage() {
         </div>
       )}
 
+      {deleteMut.isError && (
+        <div className="alert alert-error text-sm">
+          Delete failed: {deleteMut.error.message}
+        </div>
+      )}
+
+      {mergeMut.isError && (
+        <div className="alert alert-error text-sm">
+          Merge failed: {mergeMut.error.message}
+        </div>
+      )}
+
+      {selectedIds.size >= 2 && (
+        <div className="flex items-center gap-2">
+          <button
+            className="btn btn-secondary btn-sm"
+            disabled={mergeMut.isPending}
+            onClick={() => mergeMut.mutate([...selectedIds])}
+          >
+            Merge Selected ({selectedIds.size})
+          </button>
+          {mergeMut.isPending && (
+            <span className="loading loading-spinner loading-sm" />
+          )}
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex gap-2">
         {["", "QUEUED", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"].map(
@@ -119,6 +182,7 @@ export default function PipelinesPage() {
           <table className="table table-sm bg-base-100 rounded-lg shadow">
             <thead>
               <tr>
+                <th className="w-8"></th>
                 <th>File</th>
                 <th>Status</th>
                 <th>Stage</th>
@@ -130,7 +194,17 @@ export default function PipelinesPage() {
             </thead>
             <tbody>
               {runs.map((p) => (
-                <tr key={p.id}>
+                <tr key={p.id} className={selectedIds.has(p.id) ? "bg-base-200" : ""}>
+                  <td>
+                    {p.status === "COMPLETED" && (
+                      <input
+                        type="checkbox"
+                        className="checkbox checkbox-xs"
+                        checked={selectedIds.has(p.id)}
+                        onChange={() => toggleSelect(p.id)}
+                      />
+                    )}
+                  </td>
                   <td className="font-mono text-xs max-w-48 truncate">
                     {(p.filenames ?? []).join(", ") || "-"}
                   </td>
@@ -170,12 +244,25 @@ export default function PipelinesPage() {
                         Cancel
                       </button>
                     )}
+                    {(p.status === "COMPLETED" || p.status === "FAILED" || p.status === "CANCELLED") && (
+                      <button
+                        className="btn btn-ghost btn-xs text-error"
+                        disabled={deleteMut.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Delete pipeline "${(p.filenames ?? []).join(", ") || p.id}"? This cannot be undone.`)) {
+                            deleteMut.mutate(p.id);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
               {runs.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center text-base-content/60 py-8">
+                  <td colSpan={8} className="text-center text-base-content/60 py-8">
                     No pipeline runs
                   </td>
                 </tr>
