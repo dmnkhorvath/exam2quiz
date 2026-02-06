@@ -98,7 +98,7 @@ async function getCrossEncoderPipeline(): Promise<EmbeddingPipeline> {
 }
 
 // ─── Math Utilities ────────────────────────────────────────────────
-function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0;
   let normA = 0;
   let normB = 0;
@@ -111,7 +111,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
-function normalize(vec: number[]): number[] {
+export function normalize(vec: number[]): number[] {
   let norm = 0;
   for (const v of vec) norm += v * v;
   norm = Math.sqrt(norm);
@@ -143,11 +143,10 @@ async function computeEmbeddings(
 }
 
 // ─── Cosine Similarity Matrix ─────────────────────────────────────
-function buildSimilarityMatrix(embeddings: number[][]): number[][] {
+export function buildSimilarityMatrix(embeddings: number[][]): number[][] {
   const n = embeddings.length;
-  const matrix: number[][] = new Array(n);
+  const matrix: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
   for (let i = 0; i < n; i++) {
-    matrix[i] = new Array(n).fill(0);
     matrix[i][i] = 1.0;
     for (let j = i + 1; j < n; j++) {
       const sim = cosineSimilarity(embeddings[i], embeddings[j]);
@@ -160,7 +159,7 @@ function buildSimilarityMatrix(embeddings: number[][]): number[][] {
 
 // ─── Density-Based Clustering (simplified HDBSCAN) ────────────────
 // Uses mutual reachability distance + single-linkage then cuts tree
-function densityCluster(
+export function densityCluster(
   embeddings: number[][],
   minClusterSize: number,
   selectionMethod: "eom" | "leaf" = "eom",
@@ -170,9 +169,8 @@ function densityCluster(
   if (n < minClusterSize) return new Array(n).fill(-1);
 
   // Compute distance matrix (1 - cosine similarity)
-  const dist: number[][] = new Array(n);
+  const dist: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
   for (let i = 0; i < n; i++) {
-    dist[i] = new Array(n).fill(0);
     for (let j = i + 1; j < n; j++) {
       const d = 1 - cosineSimilarity(embeddings[i], embeddings[j]);
       dist[i][j] = d;
@@ -189,9 +187,8 @@ function densityCluster(
   }
 
   // Mutual reachability distance
-  const mrd: number[][] = new Array(n);
+  const mrd: number[][] = Array.from({ length: n }, () => new Array(n).fill(0));
   for (let i = 0; i < n; i++) {
-    mrd[i] = new Array(n).fill(0);
     for (let j = i + 1; j < n; j++) {
       const d = Math.max(coreDist[i], coreDist[j], dist[i][j]);
       mrd[i][j] = d;
@@ -393,7 +390,7 @@ async function verifyClustersWithCrossEncoder(
 }
 
 // ─── Group Questions by Category ──────────────────────────────────
-function groupByCategory(
+export function groupByCategory(
   questions: CategorizedQuestionEntry[],
 ): Map<string, Array<{ idx: number; question: CategorizedQuestionEntry }>> {
   const groups = new Map<string, Array<{ idx: number; question: CategorizedQuestionEntry }>>();
@@ -595,7 +592,7 @@ async function runStage2(
 }
 
 // ─── Hierarchical Split (fallback for Stage 2) ────────────────────
-function trySplitWithHierarchical(
+export function trySplitWithHierarchical(
   simMatrix: number[][],
   threshold: number,
 ): Map<number, number[]> | null {
