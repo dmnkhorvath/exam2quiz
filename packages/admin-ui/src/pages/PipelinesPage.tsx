@@ -104,11 +104,15 @@ export default function PipelinesPage() {
                   </td>
                   <td className="text-xs">{p.currentStage ?? "-"}</td>
                   <td>
-                    <progress
-                      className="progress progress-primary w-20"
-                      value={p.progress}
-                      max={100}
-                    />
+                    {p.status !== "FAILED" && p.status !== "CANCELLED" ? (
+                      <progress
+                        className="progress progress-primary w-20"
+                        value={p.progress}
+                        max={100}
+                      />
+                    ) : (
+                      <span className="text-xs text-base-content/40">-</span>
+                    )}
                   </td>
                   <td className="text-xs text-error max-w-48 truncate" title={p.error ?? undefined}>
                     {p.error ?? "-"}
