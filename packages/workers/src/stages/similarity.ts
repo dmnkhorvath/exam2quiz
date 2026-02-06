@@ -1,5 +1,5 @@
 import { type Job, type Worker } from "bullmq";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -714,6 +714,11 @@ async function processSimilarity(
   });
 
   try {
+    // Delete pre-existing similarity output and split directory for clean state
+    // (important for merged pipelines that re-run similarity from scratch)
+    await rm(outputPath, { force: true });
+    await rm(path.join(path.dirname(outputPath), "split"), { recursive: true, force: true });
+
     // Load categorized questions
     const raw = await readFile(inputPath, "utf-8");
     const questions: CategorizedQuestionEntry[] = JSON.parse(raw);
