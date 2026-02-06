@@ -28,14 +28,14 @@ import { getQueueName, getQueue, createWorker, addJob, closeAllQueues } from "./
 
 describe("getQueueName", () => {
   it("returns stage-based queue name without tenant", () => {
-    expect(getQueueName("pdf-extract")).toBe("exams2quiz-pdf-extract");
-    expect(getQueueName("gemini-parse")).toBe("exams2quiz-gemini-parse");
-    expect(getQueueName("categorize")).toBe("exams2quiz-categorize");
+    expect(getQueueName("pdf-extract")).toBe("exams2quiz:pdf-extract");
+    expect(getQueueName("gemini-parse")).toBe("exams2quiz:gemini-parse");
+    expect(getQueueName("categorize")).toBe("exams2quiz:categorize");
   });
 
   it("returns tenant-namespaced queue name", () => {
     expect(getQueueName("pdf-extract", "tenant-123")).toBe(
-      "exams2quiz-pdf-extract-tenant-123",
+      "exams2quiz:pdf-extract:tenant-123",
     );
   });
 
@@ -48,7 +48,7 @@ describe("getQueueName", () => {
       "category-split",
     ] as const;
     for (const stage of stages) {
-      expect(getQueueName(stage)).toMatch(/^exams2quiz-/);
+      expect(getQueueName(stage)).toMatch(/^exams2quiz:/);
     }
   });
 });
