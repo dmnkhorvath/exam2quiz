@@ -18,3 +18,5 @@
 {"ts":"2026-02-06T17:46:03.055068Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
 {"ts":"2026-02-06T17:58:17.441549Z","type":{"kind":"loop_started","prompt":"similarity worker is constantly failing apply proper bulletproof fix, extend testing coverage if needed"}}
 {"ts":"2026-02-06T18:07:45.220749Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
+{"ts":"2026-02-06T18:33:34.527231Z","type":{"kind":"loop_started","prompt":"similarity worker does not use tenant's category list but the config/categoris.json file that is a bug, always use tenants existing categories and if tenant has no category then simply skip categorization"}}
+{"ts":"2026-02-06T18:41:29.589424Z","type":{"kind":"loop_completed","reason":"completion_promise"}}

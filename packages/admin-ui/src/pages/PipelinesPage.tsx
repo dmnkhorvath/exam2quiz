@@ -104,7 +104,7 @@ export default function PipelinesPage() {
                   </td>
                   <td className="text-xs">{p.currentStage ?? "-"}</td>
                   <td>
-                    {p.status !== "FAILED" && p.status !== "CANCELLED" ? (
+                    {p.status !== "FAILED" && p.status !== "CANCELLED" && p.status !== "COMPLETED" ? (
                       <progress
                         className="progress progress-primary w-20"
                         value={p.progress}
