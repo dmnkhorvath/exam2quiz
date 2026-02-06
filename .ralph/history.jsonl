@@ -24,3 +24,5 @@
 {"ts":"2026-02-06T19:14:54.769775Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
 {"ts":"2026-02-06T19:25:05.227141Z","type":{"kind":"loop_started","prompt":"have the ability to delete past pipelines, and also to merge selected pipelines creating new pipeline based on selected pipelines input data skipping pdfExtractWorker and geminiParseWorker stages"}}
 {"ts":"2026-02-06T19:42:38.343846Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
+{"ts":"2026-02-06T19:59:00.122873Z","type":{"kind":"loop_started","prompt":"when doing pipeline merge delete all similarity before similarity worker is starting it's task"}}
+{"ts":"2026-02-06T20:04:17.085062Z","type":{"kind":"loop_completed","reason":"completion_promise"}}

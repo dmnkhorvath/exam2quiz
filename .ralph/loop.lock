@@ -1,5 +1,5 @@
 {
-  "pid": 15910,
-  "started": "2026-02-06T19:25:05.218426Z",
-  "prompt": "have the ability to delete past pipelines, and also to merge selected pipelines creating new pipelin..."
+  "pid": 47031,
+  "started": "2026-02-06T19:59:00.115078Z",
+  "prompt": "when doing pipeline merge delete all similarity before similarity worker is starting it's task"
 }
