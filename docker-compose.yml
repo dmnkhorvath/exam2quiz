@@ -87,6 +87,7 @@ services:
     networks:
       - backend
       - frontend
+      - monitoring
     logging:
       driver: json-file
       options:
@@ -98,6 +99,8 @@ services:
     build:
       context: .
       dockerfile: docker/workers.Dockerfile
+    ports:
+      - "${WORKER_METRICS_PORT:-9092}:9090"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-exams2quiz}:${POSTGRES_PASSWORD:-exams2quiz}@postgres:5432/${POSTGRES_DB:-exams2quiz}
       REDIS_HOST: redis
@@ -119,6 +122,7 @@ services:
     restart: unless-stopped
     networks:
       - backend
+      - monitoring
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
     logging:

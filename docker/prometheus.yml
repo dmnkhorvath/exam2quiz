@@ -8,6 +8,11 @@ scrape_configs:
       - targets: ["api:9090"]
     metrics_path: /metrics
 
+  - job_name: "exams2quiz-workers"
+    static_configs:
+      - targets: ["workers:9090"]
+    metrics_path: /metrics
+
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]
