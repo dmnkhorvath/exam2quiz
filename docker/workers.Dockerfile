@@ -1,20 +1,22 @@
 FROM node:20-slim AS builder
 
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/workers/package.json packages/workers/
 
 RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
-RUN npm ci --workspace=packages/shared --workspace=packages/workers
+RUN pnpm install --frozen-lockfile --filter shared --filter workers
 
 COPY tsconfig.base.json ./
 COPY packages/shared/ packages/shared/
 COPY packages/workers/ packages/workers/
 COPY config/ config/
 
-RUN npx prisma generate --schema=packages/shared/prisma/schema.prisma
-RUN npm run build -w packages/shared && npm run build -w packages/workers
+RUN pnpm exec prisma generate --schema=packages/shared/prisma/schema.prisma
+RUN pnpm --filter shared run build && pnpm --filter workers run build
 
 # ─── Production ─────────────────────────────────────────────────────
 FROM node:20-slim

@@ -1,18 +1,20 @@
 FROM node:20-alpine AS builder
 
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/api/package.json packages/api/
 
-RUN npm ci --workspace=packages/shared --workspace=packages/api
+RUN pnpm install --frozen-lockfile --filter shared --filter api
 
 COPY tsconfig.base.json ./
 COPY packages/shared/ packages/shared/
 COPY packages/api/ packages/api/
 
-RUN npx prisma generate --schema=packages/shared/prisma/schema.prisma
-RUN npm run build -w packages/shared && npm run build -w packages/api
+RUN pnpm exec prisma generate --schema=packages/shared/prisma/schema.prisma
+RUN pnpm --filter shared run build && pnpm --filter api run build
 
 # ─── Production ─────────────────────────────────────────────────────
 FROM node:20-alpine

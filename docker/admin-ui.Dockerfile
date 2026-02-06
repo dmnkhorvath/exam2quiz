@@ -1,14 +1,16 @@
 FROM node:20-alpine AS builder
 
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/admin-ui/package.json packages/admin-ui/
 
-RUN npm ci --workspace=packages/admin-ui
+RUN pnpm install --frozen-lockfile --filter admin-ui
 
 COPY packages/admin-ui/ packages/admin-ui/
 
-RUN npm run build -w packages/admin-ui
+RUN pnpm --filter admin-ui run build
 
 # ─── Production (Nginx) ────────────────────────────────────────────
 FROM nginx:alpine
