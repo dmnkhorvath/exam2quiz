@@ -1,0 +1,2 @@
+{"ts":"2026-02-07T18:48:36.736772+00:00","iteration":0,"hat":"loop","topic":"merge.start","triggered":"planner","payload":"Merge loop brave-daisy from branch ralph/brave-daisy"}
+{"payload":"loop bright-maple merged at 5828b6a, worktree and branch cleaned up","topic":"MERGE_COMPLETE","ts":"2026-02-07T18:48:58.759053+00:00"}
