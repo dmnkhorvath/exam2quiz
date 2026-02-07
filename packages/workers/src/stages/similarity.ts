@@ -20,6 +20,8 @@ const execFileAsync = promisify(execFile);
 // ─── Constants ────────────────────────────────────────────────────
 const DEFAULT_CROSS_ENCODER_THRESHOLD = 0.7;
 const DEFAULT_REFINE_THRESHOLD = 10;
+const SIMILARITY_TIMEOUT_MS = Number(process.env.SIMILARITY_TIMEOUT_MS) || 60 * 60 * 1000; // default 60 min
+const SIMILARITY_MAX_BUFFER = 100 * 1024 * 1024; // 100MB output buffer
 
 // Path to the Python script (relative to repo root)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,8 +74,8 @@ async function runPythonSimilarity(
 
   const { stdout, stderr } = await execFileAsync("uv", args, {
     cwd: REPO_ROOT,
-    timeout: 30 * 60 * 1000, // 30 minutes max
-    maxBuffer: 50 * 1024 * 1024, // 50MB output buffer
+    timeout: SIMILARITY_TIMEOUT_MS,
+    maxBuffer: SIMILARITY_MAX_BUFFER,
   });
 
   if (stdout) {
