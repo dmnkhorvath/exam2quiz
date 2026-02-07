@@ -7,6 +7,7 @@ import { createGeminiParseWorker } from "./stages/gemini-parse.js";
 import { createCategorizeWorker } from "./stages/categorize.js";
 import { createSimilarityWorker } from "./stages/similarity.js";
 import { createCategorySplitWorker } from "./stages/category-split.js";
+import { createBatchCoordinateWorker } from "./stages/batch-coordinate.js";
 import { instrumentWorker, startWorkerMetricsServer, stopWorkerMetricsServer } from "./metrics.js";
 
 const config = getConfig();
@@ -21,6 +22,7 @@ const geminiParseWorker = createGeminiParseWorker();
 const categorizeWorker = createCategorizeWorker();
 const similarityWorker = createSimilarityWorker();
 const categorySplitWorker = createCategorySplitWorker();
+const batchCoordinateWorker = createBatchCoordinateWorker();
 
 const workers = [
   pdfExtractWorker,
@@ -28,6 +30,7 @@ const workers = [
   categorizeWorker,
   similarityWorker,
   categorySplitWorker,
+  batchCoordinateWorker,
 ];
 
 // ─── Instrument workers with Prometheus metrics ──────────────────
@@ -36,6 +39,7 @@ instrumentWorker(geminiParseWorker, PipelineStage.GEMINI_PARSE);
 instrumentWorker(categorizeWorker, PipelineStage.CATEGORIZE);
 instrumentWorker(similarityWorker, PipelineStage.SIMILARITY);
 instrumentWorker(categorySplitWorker, PipelineStage.CATEGORY_SPLIT);
+instrumentWorker(batchCoordinateWorker, PipelineStage.BATCH_COORDINATE);
 
 console.log(`[workers] ${workers.length} worker(s) registered and instrumented`);
 
