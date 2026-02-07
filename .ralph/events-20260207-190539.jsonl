@@ -1,0 +1,8 @@
+{"ts":"2026-02-07T19:05:39.645463+00:00","iteration":0,"hat":"loop","topic":"repro.start","triggered":"planner","payload":"as superadmin when i am on pipeline route and a tenant's pipelines are selected use that tenant as the target tenant when submitting new documents/urls"}
+{"payload":"bright-maple merged as 5828b6a, branch cleaned up, no open tasks","topic":"MERGE_COMPLETE","ts":"2026-02-07T19:05:51.641054+00:00"}
+{"payload":"sleek-sparrow branch merged to main at f9b0657, branch cleaned up, CI fix applied at 0ee6a97","topic":"MERGE_COMPLETE","ts":"2026-02-07T19:06:02.938711+00:00"}
+{"payload":"Branch ralph/bright-maple merged to main at commit 5828b6a. Branch and worktree already cleaned up.","topic":"MERGE_COMPLETE","ts":"2026-02-07T19:06:20.953803+00:00"}
+{"payload":"Branch ralph/sleek-sparrow already merged to main (commit f9b0657) and branch cleaned up. No tasks remaining.","topic":"MERGE_COMPLETE","ts":"2026-02-07T19:06:34.198495+00:00"}
+{"payload":"Branch ralph/bright-maple already merged to main at 5828b6a. Branch deleted. No work remaining.","topic":"MERGE_COMPLETE","ts":"2026-02-07T19:06:59.861564+00:00"}
+{"payload":"sleek-sparrow already merged to main at f9b0657, branch cleaned up","topic":"MERGE_COMPLETE","ts":"2026-02-07T19:07:06.426973+00:00"}
+{"payload":"sleek-sparrow already merged at f9b0657, branch deleted","topic":"MERGE_COMPLETE","ts":"2026-02-07T19:07:33.894532+00:00"}
