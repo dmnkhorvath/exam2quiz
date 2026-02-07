@@ -2,11 +2,7 @@ import { type Job, type Worker } from "bullmq";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import {
-  GoogleGenerativeAI,
-  GoogleGenerativeAIFetchError,
-  SchemaType,
-} from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 import {
   PipelineStage,
@@ -45,17 +41,17 @@ RULES:
 - Keep Hungarian characters exact (á, é, í, ó, ö, ő, ú, ü, ű)`;
 
 const PARSE_RESPONSE_SCHEMA = {
-  type: SchemaType.OBJECT,
+  type: "OBJECT" as const,
   properties: {
-    question_number: { type: SchemaType.STRING },
-    points: { type: SchemaType.INTEGER },
-    question_text: { type: SchemaType.STRING },
+    question_number: { type: "STRING" as const },
+    points: { type: "INTEGER" as const },
+    question_text: { type: "STRING" as const },
     question_type: {
-      type: SchemaType.STRING,
-      enum: ["multiple_choice", "fill_in", "matching", "open"] as string[],
+      type: "STRING" as const,
+      enum: ["multiple_choice", "fill_in", "matching", "open"],
     },
-    correct_answer: { type: SchemaType.STRING },
-    options: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    correct_answer: { type: "STRING" as const },
+    options: { type: "ARRAY" as const, items: { type: "STRING" as const } },
   },
   required: [
     "question_number",
@@ -89,7 +85,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function isRateLimitError(err: unknown): boolean {
-  if (err instanceof GoogleGenerativeAIFetchError && err.status === 429) {
+  if (typeof err === "object" && err !== null && "status" in err && (err as { status: number }).status === 429) {
     return true;
   }
   return String(err).includes("429");
@@ -119,33 +115,33 @@ async function parseSingleImage(
   apiKey: string,
 ): Promise<ParseResult> {
   const fileName = path.basename(imagePath);
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: GEMINI_MODEL,
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 2048,
-      responseMimeType: "application/json",
-      responseSchema: PARSE_RESPONSE_SCHEMA,
-    },
-  });
+  const ai = new GoogleGenAI({ apiKey });
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       const imageData = await readFile(imagePath);
       const base64Image = imageData.toString("base64");
 
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            mimeType: "image/png",
-            data: base64Image,
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: "image/png", data: base64Image } },
+              { text: PARSE_SYSTEM_PROMPT },
+            ],
           },
+        ],
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 2048,
+          responseMimeType: "application/json",
+          responseSchema: PARSE_RESPONSE_SCHEMA,
         },
-        { text: PARSE_SYSTEM_PROMPT },
-      ]);
+      });
 
-      const responseText = result.response.text();
+      const responseText = response.text ?? "";
       const parsed = JSON.parse(responseText);
 
       trackGeminiCall("gemini-parse", "success");

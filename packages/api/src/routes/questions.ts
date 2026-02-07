@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { getDb } from "@exams2quiz/shared/db";
 import { getConfig } from "@exams2quiz/shared/config";
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -30,14 +30,14 @@ RULES:
 - Keep Hungarian characters exact (á, é, í, ó, ö, ő, ú, ü, ű)`;
 
 const PARSE_RESPONSE_SCHEMA = {
-  type: SchemaType.OBJECT,
+  type: "OBJECT" as const,
   properties: {
-    question_number: { type: SchemaType.STRING },
-    points: { type: SchemaType.NUMBER },
-    question_text: { type: SchemaType.STRING },
-    question_type: { type: SchemaType.STRING },
-    correct_answer: { type: SchemaType.STRING },
-    options: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    question_number: { type: "STRING" as const },
+    points: { type: "NUMBER" as const },
+    question_text: { type: "STRING" as const },
+    question_type: { type: "STRING" as const },
+    correct_answer: { type: "STRING" as const },
+    options: { type: "ARRAY" as const, items: { type: "STRING" as const } },
   },
   required: ["question_number", "points", "question_text", "question_type", "correct_answer", "options"],
 };
@@ -85,17 +85,17 @@ function buildCategorizeSystemPrompt(categories: Category[]): string {
 function buildCategorizeResponseSchema(categories: Category[]) {
   const hasSubcategories = categories.some((c) => c.subcategory);
   const uniqueNames = [...new Set(categories.map((c) => c.name))];
-  const properties: Record<string, { type: SchemaType; enum?: string[]; description?: string }> = {
-    category: { type: SchemaType.STRING, enum: uniqueNames },
-    reasoning: { type: SchemaType.STRING, description: "Brief explanation for the categorization" },
+  const properties: Record<string, { type: string; enum?: string[]; description?: string }> = {
+    category: { type: "STRING", enum: uniqueNames },
+    reasoning: { type: "STRING", description: "Brief explanation for the categorization" },
   };
   const required = ["category", "reasoning"];
   if (hasSubcategories) {
     const uniqueSubcategories = [...new Set(categories.filter((c) => c.subcategory).map((c) => c.subcategory as string))];
-    properties.subcategory = { type: SchemaType.STRING, enum: uniqueSubcategories };
+    properties.subcategory = { type: "STRING", enum: uniqueSubcategories };
     required.push("subcategory");
   }
-  return { type: SchemaType.OBJECT, properties, required };
+  return { type: "OBJECT" as const, properties, required };
 }
 
 // ─── Route registration ──────────────────────────────────────────
@@ -293,10 +293,21 @@ export async function questionRoutes(app: FastifyInstance) {
 
       // Call Gemini to reparse
       const apiKey = await getGeminiApiKey(question.tenantId);
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
+      const ai = new GoogleGenAI({ apiKey });
+
+      const base64Image = imageData.toString("base64");
+      const response = await ai.models.generateContent({
         model: GEMINI_MODEL,
-        generationConfig: {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: "image/png", data: base64Image } },
+              { text: PARSE_SYSTEM_PROMPT },
+            ],
+          },
+        ],
+        config: {
           temperature: 0.1,
           maxOutputTokens: 2048,
           responseMimeType: "application/json",
@@ -304,13 +315,7 @@ export async function questionRoutes(app: FastifyInstance) {
         },
       });
 
-      const base64Image = imageData.toString("base64");
-      const result = await model.generateContent([
-        { inlineData: { mimeType: "image/png", data: base64Image } },
-        { text: PARSE_SYSTEM_PROMPT },
-      ]);
-
-      const parsed = JSON.parse(result.response.text());
+      const parsed = JSON.parse(response.text ?? "");
 
       // Update question in DB
       const updated = await db.question.update({
@@ -359,21 +364,21 @@ export async function questionRoutes(app: FastifyInstance) {
       const systemPrompt = buildCategorizeSystemPrompt(categories);
       const responseSchema = buildCategorizeResponseSchema(categories);
 
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
+      const ai = new GoogleGenAI({ apiKey });
+
+      const prompt = `Categorize this Hungarian medical exam question:\n\nQuestion: ${data.question_text}\n\nCorrect Answer: ${data.correct_answer ?? ""}`;
+      const response = await ai.models.generateContent({
         model: GEMINI_MODEL,
-        systemInstruction: systemPrompt,
-        generationConfig: {
+        contents: prompt,
+        config: {
+          systemInstruction: systemPrompt,
           temperature: 0.1,
           maxOutputTokens: 1024,
           responseMimeType: "application/json",
           responseSchema,
         },
       });
-
-      const prompt = `Categorize this Hungarian medical exam question:\n\nQuestion: ${data.question_text}\n\nCorrect Answer: ${data.correct_answer ?? ""}`;
-      const result = await model.generateContent(prompt);
-      const parsed = JSON.parse(result.response.text());
+      const parsed = JSON.parse(response.text ?? "");
 
       const categorization = {
         success: true,

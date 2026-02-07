@@ -2,11 +2,7 @@ import { type Job, type Worker } from "bullmq";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import {
-  GoogleGenerativeAI,
-  GoogleGenerativeAIFetchError,
-  SchemaType,
-} from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 import { Prisma } from "@prisma/client";
 
@@ -62,7 +58,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function isRateLimitError(err: unknown): boolean {
-  if (err instanceof GoogleGenerativeAIFetchError && err.status === 429) {
+  if (typeof err === "object" && err !== null && "status" in err && (err as { status: number }).status === 429) {
     return true;
   }
   return String(err).includes("429");
@@ -119,13 +115,13 @@ function buildResponseSchema(categories: Category[]) {
   const hasSubcategories = categories.some((c) => c.subcategory);
   const uniqueNames = [...new Set(categories.map((c) => c.name))];
 
-  const properties: Record<string, { type: SchemaType; enum?: string[]; description?: string }> = {
+  const properties: Record<string, { type: string; enum?: string[]; description?: string }> = {
     category: {
-      type: SchemaType.STRING,
-      enum: uniqueNames as string[],
+      type: "STRING",
+      enum: uniqueNames,
     },
     reasoning: {
-      type: SchemaType.STRING,
+      type: "STRING",
       description: "Brief explanation for the categorization",
     },
   };
@@ -137,14 +133,14 @@ function buildResponseSchema(categories: Category[]) {
       categories.filter((c) => c.subcategory).map((c) => c.subcategory as string),
     )];
     properties.subcategory = {
-      type: SchemaType.STRING,
-      enum: uniqueSubcategories as string[],
+      type: "STRING",
+      enum: uniqueSubcategories,
     };
     required.push("subcategory");
   }
 
   return {
-    type: SchemaType.OBJECT,
+    type: "OBJECT" as const,
     properties,
     required,
   };
@@ -183,17 +179,7 @@ async function categorizeSingleQuestion(
     };
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: GEMINI_MODEL,
-    systemInstruction: systemPrompt,
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 1024,
-      responseMimeType: "application/json",
-      responseSchema: buildResponseSchema(categories),
-    },
-  });
+  const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `Categorize this Hungarian medical exam question:
 
@@ -203,8 +189,18 @@ Correct Answer: ${data.correct_answer}`;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
+      const response = await ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: prompt,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: 0.1,
+          maxOutputTokens: 1024,
+          responseMimeType: "application/json",
+          responseSchema: buildResponseSchema(categories),
+        },
+      });
+      const responseText = response.text ?? "";
       const parsed = JSON.parse(responseText);
 
       // Validate category is in the allowed list
