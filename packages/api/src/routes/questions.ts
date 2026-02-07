@@ -483,11 +483,22 @@ export async function questionRoutes(app: FastifyInstance) {
         return reply.code(404).send({ error: "Question not found" });
       }
 
-      if (!question.pipelineRunId || !question.sourcePdf) {
-        return reply.code(400).send({ error: "Question has no associated pipeline run or source PDF" });
+      if (!question.pipelineRunId) {
+        return reply.code(400).send({ error: "Question has no associated pipeline run" });
       }
 
-      const imagePath = join(config.OUTPUT_DIR, question.tenantId, question.pipelineRunId, question.sourcePdf, question.file);
+      // Derive source folder from sourcePdf field, or fall back to extracting
+      // the PDF stem from the image filename (e.g. "SomePdf_q001_3pt.png" → "SomePdf")
+      let sourceFolder = question.sourcePdf;
+      if (!sourceFolder) {
+        const match = question.file.match(/^(.+)_q\d+_\d+pt\.\w+$/);
+        sourceFolder = match ? match[1] : null;
+      }
+      if (!sourceFolder) {
+        return reply.code(400).send({ error: "Cannot determine source PDF folder for this question" });
+      }
+
+      const imagePath = join(config.OUTPUT_DIR, question.tenantId, question.pipelineRunId, sourceFolder, question.file);
       let imageData: Buffer;
       try {
         imageData = await readFile(imagePath);

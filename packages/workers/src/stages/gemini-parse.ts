@@ -65,7 +65,7 @@ const PARSE_RESPONSE_SCHEMA = {
 // ─── Result types ─────────────────────────────────────────────────
 interface ParseResult {
   file: string;
-  source_pdf?: string;
+  source_folder?: string;
   success: boolean;
   data?: {
     question_number: string;
@@ -248,11 +248,11 @@ async function processGeminiParse(
       },
     );
 
-    // Add source_pdf to each result (derived from image's parent directory name)
+    // Add source_folder to each result (derived from image's parent directory name)
     for (const result of results) {
       const imgPath = imagePaths.find((p) => path.basename(p) === result.file);
       if (imgPath) {
-        result.source_pdf = path.basename(path.dirname(imgPath));
+        result.source_folder = path.basename(path.dirname(imgPath));
       }
     }
 

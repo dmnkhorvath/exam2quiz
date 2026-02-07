@@ -6,8 +6,6 @@ import { PipelineStage, BATCH_DEFAULTS } from "@exams2quiz/shared/types";
 import { getConfig } from "@exams2quiz/shared/config";
 import { mkdir, writeFile, rm, readFile, readdir, copyFile } from "node:fs/promises";
 import { join, basename } from "node:path";
-import { createWriteStream } from "node:fs";
-import { pipeline } from "node:stream/promises";
 import {
   pipelinesStartedTotal,
   filesDownloadedTotal,
@@ -46,14 +44,17 @@ export async function pipelineRoutes(app: FastifyInstance) {
       let urlsText = "";
       let formTenantId = "";
 
-      // Process multipart parts (files + fields) first to extract tenantId field
+      // Process multipart parts (files + fields) first to extract tenantId field.
+      // File streams MUST be consumed during iteration — @fastify/multipart drains
+      // them before yielding the next part, so we read into Buffers here and write
+      // to disk once we know the target tenantId / upload directory.
       const parts = request.parts();
-      // We need a temporary list of file parts to process after we know the tenantId
-      const fileParts: { filename: string; mimetype: string; file: MultipartFile["file"] }[] = [];
+      const fileParts: { filename: string; mimetype: string; data: Buffer }[] = [];
       for await (const part of parts) {
         if (part.type === "file") {
           const filePart = part as MultipartFile;
-          fileParts.push({ filename: filePart.filename, mimetype: filePart.mimetype, file: filePart.file });
+          const data = await filePart.toBuffer();
+          fileParts.push({ filename: filePart.filename, mimetype: filePart.mimetype, data });
         } else {
           if (part.fieldname === "urls") {
             urlsText = (part as { value: string }).value;
@@ -99,7 +100,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
       const uploadDir = join(config.UPLOAD_DIR, tenantId, pipelineRun.id);
       await mkdir(uploadDir, { recursive: true });
 
-      // Process buffered file parts
+      // Write buffered file parts to disk
       for (const filePart of fileParts) {
         if (filePart.mimetype !== "application/pdf") {
           await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
@@ -107,7 +108,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
         }
 
         const pdfPath = join(uploadDir, filePart.filename);
-        await pipeline(filePart.file, createWriteStream(pdfPath));
+        await writeFile(pdfPath, filePart.data);
 
         allFilenames.push(filePart.filename);
         allPdfPaths.push(pdfPath);
