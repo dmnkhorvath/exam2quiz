@@ -44,6 +44,7 @@ describe("getQueueName", () => {
       "pdf-extract",
       "gemini-parse",
       "categorize",
+      "batch-coordinate",
       "similarity",
       "category-split",
     ] as const;

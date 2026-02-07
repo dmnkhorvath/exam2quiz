@@ -112,10 +112,19 @@ model PipelineRun {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
+  // Batch orchestration
+  parentRunId     String?
+  parentRun       PipelineRun?   @relation("BatchChildren", fields: [parentRunId], references: [id])
+  childRuns       PipelineRun[]  @relation("BatchChildren")
+  batchIndex      Int?
+  batchSize       Int?
+  totalBatches    Int?
+
   jobs            PipelineJob[]
   questions       Question[]
 
   @@index([tenantId, status])
+  @@index([parentRunId, status])
   @@map("pipeline_runs")
 }
 

@@ -5,6 +5,7 @@ export const PipelineStage = {
   PDF_EXTRACT: "pdf-extract",
   GEMINI_PARSE: "gemini-parse",
   CATEGORIZE: "categorize",
+  BATCH_COORDINATE: "batch-coordinate",
   SIMILARITY: "similarity",
   CATEGORY_SPLIT: "category-split",
 } as const;
@@ -121,12 +122,27 @@ export interface CategorySplitJobData {
   outputDir: string;
 }
 
+export interface BatchCoordinatorJobData {
+  tenantId: string;
+  parentPipelineRunId: string;
+  childPipelineRunIds: string[];
+}
+
 export type PipelineJobData =
   | PdfExtractJobData
   | GeminiParseJobData
   | CategorizeJobData
   | SimilarityJobData
-  | CategorySplitJobData;
+  | CategorySplitJobData
+  | BatchCoordinatorJobData;
+
+// ─── Batch Processing Defaults ────────────────────────────────────
+export const BATCH_DEFAULTS = {
+  BATCH_SIZE: 30,
+  MAX_BATCHES: 20,
+  COORDINATOR_POLL_INTERVAL: 10_000,
+  COORDINATOR_TIMEOUT: 4 * 60 * 60 * 1000,
+} as const;
 
 // ─── API Types ─────────────────────────────────────────────────────
 export interface TenantConfig {

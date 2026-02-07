@@ -11,10 +11,11 @@ import {
 } from "./index.js";
 
 describe("PipelineStage", () => {
-  it("defines all five pipeline stages", () => {
+  it("defines all pipeline stages", () => {
     expect(PipelineStage.PDF_EXTRACT).toBe("pdf-extract");
     expect(PipelineStage.GEMINI_PARSE).toBe("gemini-parse");
     expect(PipelineStage.CATEGORIZE).toBe("categorize");
+    expect(PipelineStage.BATCH_COORDINATE).toBe("batch-coordinate");
     expect(PipelineStage.SIMILARITY).toBe("similarity");
     expect(PipelineStage.CATEGORY_SPLIT).toBe("category-split");
   });
