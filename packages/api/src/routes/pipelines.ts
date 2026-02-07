@@ -378,6 +378,8 @@ export async function pipelineRoutes(app: FastifyInstance) {
       if (status) {
         where.status = status.toUpperCase();
       }
+      // Hide batch children from the top-level list — they appear under their parent
+      where.parentRunId = null;
 
       const [runs, total] = await Promise.all([
         db.pipelineRun.findMany({
@@ -385,15 +387,32 @@ export async function pipelineRoutes(app: FastifyInstance) {
           orderBy: { createdAt: "desc" },
           take: Math.min(limit, 100),
           skip: offset,
-          include: { tenant: { select: { name: true, slug: true } } },
+          include: {
+            tenant: { select: { name: true, slug: true } },
+            childRuns: {
+              orderBy: { batchIndex: "asc" },
+              select: {
+                id: true,
+                status: true,
+                currentStage: true,
+                batchIndex: true,
+                errorMessage: true,
+                filenames: true,
+              },
+            },
+          },
         }),
         db.pipelineRun.count({ where }),
       ]);
 
       // Map errorMessage -> error for frontend compatibility
-      const data = runs.map(({ errorMessage, ...rest }) => ({
+      const data = runs.map(({ errorMessage, childRuns, ...rest }) => ({
         ...rest,
         error: errorMessage ?? null,
+        childRuns: childRuns.map(({ errorMessage: childErr, ...childRest }) => ({
+          ...childRest,
+          error: childErr ?? null,
+        })),
       }));
 
       return { data, total, limit, offset };
@@ -412,6 +431,17 @@ export async function pipelineRoutes(app: FastifyInstance) {
         include: {
           jobs: { orderBy: { createdAt: "asc" } },
           tenant: { select: { name: true, slug: true } },
+          childRuns: {
+            orderBy: { batchIndex: "asc" },
+            select: {
+              id: true,
+              status: true,
+              currentStage: true,
+              batchIndex: true,
+              errorMessage: true,
+              filenames: true,
+            },
+          },
         },
       });
 
@@ -425,13 +455,17 @@ export async function pipelineRoutes(app: FastifyInstance) {
       }
 
       // Map errorMessage -> error for frontend compatibility
-      const { errorMessage, jobs, ...rest } = run;
+      const { errorMessage, jobs, childRuns, ...rest } = run;
       return {
         ...rest,
         error: errorMessage ?? null,
         jobs: jobs?.map(({ errorMessage: jobError, ...jobRest }) => ({
           ...jobRest,
           error: jobError ?? null,
+        })),
+        childRuns: childRuns.map(({ errorMessage: childErr, ...childRest }) => ({
+          ...childRest,
+          error: childErr ?? null,
         })),
       };
     },

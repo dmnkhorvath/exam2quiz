@@ -1,5 +1,14 @@
 import { api } from "./api";
 
+export interface BatchChildRun {
+  id: string;
+  status: string;
+  currentStage: string | null;
+  batchIndex: number | null;
+  error: string | null;
+  filenames: string[];
+}
+
 export interface PipelineRun {
   id: string;
   tenantId: string;
@@ -11,7 +20,10 @@ export interface PipelineRun {
   error: string | null;
   createdAt: string;
   updatedAt: string;
+  totalBatches?: number | null;
+  parentRunId?: string | null;
   jobs?: PipelineJob[];
+  childRuns?: BatchChildRun[];
 }
 
 export interface PipelineJob {

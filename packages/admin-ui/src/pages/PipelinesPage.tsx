@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { pipelinesApi } from "../services/pipelines";
+import { pipelinesApi, type BatchChildRun } from "../services/pipelines";
 
 export default function PipelinesPage() {
   const qc = useQueryClient();
@@ -193,7 +193,12 @@ export default function PipelinesPage() {
               </tr>
             </thead>
             <tbody>
-              {runs.map((p) => (
+              {runs.map((p) => {
+                const isBatch = (p.totalBatches ?? 0) > 0;
+                const children = p.childRuns ?? [];
+                const completedBatches = children.filter((c) => c.status === "COMPLETED").length;
+                const failedBatches = children.filter((c) => c.status === "FAILED").length;
+                return (
                 <tr key={p.id} className={selectedIds.has(p.id) ? "bg-base-200" : ""}>
                   <td>
                     {p.status === "COMPLETED" && (
@@ -206,19 +211,42 @@ export default function PipelinesPage() {
                     )}
                   </td>
                   <td className="font-mono text-xs max-w-48 truncate">
+                    {isBatch && (
+                      <span className="badge badge-xs badge-outline mr-1">
+                        batch
+                      </span>
+                    )}
                     {(p.filenames ?? []).join(", ") || "-"}
                   </td>
                   <td>
                     <StatusBadge status={p.status} />
                   </td>
-                  <td className="text-xs">{p.currentStage ?? "-"}</td>
+                  <td className="text-xs">
+                    {p.currentStage ?? "-"}
+                    {isBatch && (
+                      <div className="text-xs text-base-content/60 mt-0.5">
+                        {completedBatches}/{p.totalBatches} batches
+                        {failedBatches > 0 && (
+                          <span className="text-error ml-1">({failedBatches} failed)</span>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td>
                     {p.status !== "FAILED" && p.status !== "CANCELLED" && p.status !== "COMPLETED" ? (
-                      <progress
-                        className="progress progress-primary w-20"
-                        value={p.progress}
-                        max={100}
-                      />
+                      isBatch ? (
+                        <progress
+                          className="progress progress-primary w-20"
+                          value={completedBatches}
+                          max={p.totalBatches ?? 1}
+                        />
+                      ) : (
+                        <progress
+                          className="progress progress-primary w-20"
+                          value={p.progress}
+                          max={100}
+                        />
+                      )
                     ) : (
                       <span className="text-xs text-base-content/40">-</span>
                     )}
@@ -259,7 +287,8 @@ export default function PipelinesPage() {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {runs.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center text-base-content/60 py-8">
@@ -347,6 +376,10 @@ function PipelineDetail({
               <div className="alert alert-error text-sm">{data.error}</div>
             )}
 
+            {(data.childRuns?.length ?? 0) > 0 && (
+              <BatchChildList childRuns={data.childRuns!} totalBatches={data.totalBatches ?? 0} />
+            )}
+
             {data.jobs && data.jobs.length > 0 && (
               <div>
                 <h4 className="font-semibold mb-2">Jobs</h4>
@@ -385,6 +418,64 @@ function PipelineDetail({
         </div>
       </div>
       <div className="modal-backdrop" onClick={onClose} />
+    </div>
+  );
+}
+
+function BatchChildList({
+  childRuns,
+  totalBatches,
+}: {
+  childRuns: BatchChildRun[];
+  totalBatches: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const completed = childRuns.filter((c) => c.status === "COMPLETED").length;
+  const failed = childRuns.filter((c) => c.status === "FAILED").length;
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-2 cursor-pointer select-none"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
+        <h4 className="font-semibold">
+          Batches
+        </h4>
+        <span className="text-sm text-base-content/60">
+          {completed}/{totalBatches} complete
+          {failed > 0 && (
+            <span className="text-error ml-1">({failed} failed)</span>
+          )}
+        </span>
+      </div>
+      {expanded && (
+        <div className="mt-2 space-y-1">
+          {childRuns.map((child) => (
+            <div
+              key={child.id}
+              className="flex items-center gap-3 text-sm bg-base-200 rounded px-3 py-2"
+            >
+              <span className="font-mono text-xs w-20">
+                Batch {(child.batchIndex ?? 0) + 1}
+              </span>
+              <StatusBadge status={child.status} />
+              <span className="text-xs text-base-content/60">
+                {child.currentStage ?? "-"}
+              </span>
+              <span className="text-xs text-base-content/60">
+                {(child.filenames ?? []).length} files
+              </span>
+              {child.error && (
+                <span className="text-error text-xs break-all" title={child.error}>
+                  {child.error}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
