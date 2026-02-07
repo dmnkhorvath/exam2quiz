@@ -1,1 +1,5 @@
 {"ts":"2026-02-07T18:58:36.755148+00:00","iteration":0,"hat":"loop","topic":"merge.start","triggered":"planner","payload":"Merge loop bright-maple from branch ralph/bright-maple"}
+{"payload":"bright-maple already merged at 5828b6a, branch deleted, worktree cleaned","topic":"merge.done","ts":"2026-02-07T18:59:15.751397+00:00"}
+{"payload":"commit: f9b0657, tests: pass, lint: pass, typecheck: pass, build: pass","topic":"merge.done","ts":"2026-02-07T18:59:38.939477+00:00"}
+{"payload":{"loop_id":"bright-maple","merge_commit":"5828b6a","note":"worktree and branch already cleaned in prior iteration","status":"merged"},"topic":"cleanup.done","ts":"2026-02-07T18:59:49.370071+00:00"}
+{"payload":{"loop_id":"bright-maple","merge_commit":"5828b6a","status":"merged"},"topic":"merge.complete","ts":"2026-02-07T19:00:13.074925+00:00"}
