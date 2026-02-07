@@ -176,6 +176,40 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ─── Loki ─────────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.3.2
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./docker/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+    networks:
+      - monitoring
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─── Promtail ────────────────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:3.3.2
+    volumes:
+      - ./docker/promtail.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    restart: unless-stopped
+    networks:
+      - monitoring
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ─── Grafana ──────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:11.5.1
@@ -191,6 +225,7 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+      - loki
     restart: unless-stopped
     networks:
       - monitoring
@@ -216,3 +251,4 @@ volumes:
   output-data:
   prometheus-data:
   grafana-data:
+  loki-data:
