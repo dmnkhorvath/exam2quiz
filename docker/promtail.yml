@@ -24,3 +24,20 @@ scrape_configs:
         target_label: project
     pipeline_stages:
       - docker: {}
+      # Parse structured worker logs: [stage] [LEVEL] event: message {json_meta}
+      - regex:
+          expression: '^\[(?P<pipeline_stage>[a-z\-]+)\] \[(?P<log_level>[A-Z]+)\] (?P<event_name>[a-z_]+): (?P<log_message>.*?)(?:\s+(?P<json_meta>\{.*\}))?$'
+      - labels:
+          pipeline_stage:
+          log_level:
+          event_name:
+      # Extract tenantId and pipelineRunId from JSON metadata when present
+      - regex:
+          source: json_meta
+          expression: '"tenantId"\s*:\s*"(?P<tenant_id>[^"]+)"'
+      - regex:
+          source: json_meta
+          expression: '"pipelineRunId"\s*:\s*"(?P<pipeline_run_id>[^"]+)"'
+      - labels:
+          tenant_id:
+          pipeline_run_id:

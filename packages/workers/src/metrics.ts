@@ -17,30 +17,38 @@ collectDefaultMetrics({ register, prefix: "worker_" });
 // ─── Worker Job Metrics ──────────────────────────────────────────
 const jobsCompletedTotal = new Counter({
   name: "worker_jobs_completed_total",
-  help: "Total completed jobs by stage",
-  labelNames: ["stage"] as const,
+  help: "Total completed jobs by stage and tenant",
+  labelNames: ["stage", "tenant_id"] as const,
   registers: [register],
 });
 
 const jobsFailedTotal = new Counter({
   name: "worker_jobs_failed_total",
-  help: "Total failed jobs by stage",
-  labelNames: ["stage"] as const,
+  help: "Total failed jobs by stage and tenant",
+  labelNames: ["stage", "tenant_id"] as const,
   registers: [register],
 });
 
 const jobDurationSeconds = new Histogram({
   name: "worker_job_duration_seconds",
   help: "Job processing duration in seconds",
-  labelNames: ["stage"] as const,
+  labelNames: ["stage", "tenant_id"] as const,
   buckets: [0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600],
   registers: [register],
 });
 
 const activeJobs = new Gauge({
   name: "worker_active_jobs",
-  help: "Number of currently active jobs by stage",
-  labelNames: ["stage"] as const,
+  help: "Number of currently active jobs by stage and tenant",
+  labelNames: ["stage", "tenant_id"] as const,
+  registers: [register],
+});
+
+// ─── Pipeline Run Tracking ──────────────────────────────────────
+const pipelineRunsActive = new Gauge({
+  name: "pipeline_runs_active",
+  help: "Number of currently active pipeline runs by tenant and stage",
+  labelNames: ["tenant_id", "stage"] as const,
   registers: [register],
 });
 
@@ -130,15 +138,18 @@ export function trackSimilarityGroups(count: number): void {
 // ─── Instrument Workers ─────────────────────────────────────────
 export function instrumentWorker(worker: Worker, stage: string): void {
   worker.on("completed", (job) => {
-    jobsCompletedTotal.inc({ stage });
+    const tenantId = (job?.data?.tenantId as string) || "unknown";
+    jobsCompletedTotal.inc({ stage, tenant_id: tenantId });
     if (job.processedOn && job.finishedOn) {
       const duration = (job.finishedOn - job.processedOn) / 1000;
-      jobDurationSeconds.observe({ stage }, duration);
+      jobDurationSeconds.observe({ stage, tenant_id: tenantId }, duration);
     }
+    pipelineRunsActive.dec({ tenant_id: tenantId, stage });
   });
 
   worker.on("failed", (job, err) => {
-    jobsFailedTotal.inc({ stage });
+    const tenantId = (job?.data?.tenantId as string) || "unknown";
+    jobsFailedTotal.inc({ stage, tenant_id: tenantId });
 
     // Safety net: if the processor crashed (e.g. native module error),
     // the in-processor catch block never ran, so ensure the pipeline
@@ -154,16 +165,24 @@ export function instrumentWorker(worker: Worker, stage: string): void {
         console.error(`[metrics] Failed to mark pipeline run ${pipelineRunId} as FAILED:`, e);
       });
     }
+    pipelineRunsActive.dec({ tenant_id: tenantId, stage });
   });
 
-  worker.on("active", () => {
-    activeJobs.inc({ stage });
+  worker.on("active", (job) => {
+    const tenantId = (job?.data?.tenantId as string) || "unknown";
+    activeJobs.inc({ stage, tenant_id: tenantId });
+    pipelineRunsActive.inc({ tenant_id: tenantId, stage });
   });
 
   // Decrement active on completed or failed
-  const decActive = () => activeJobs.dec({ stage });
-  worker.on("completed", decActive);
-  worker.on("failed", decActive);
+  worker.on("completed", (job) => {
+    const tenantId = (job?.data?.tenantId as string) || "unknown";
+    activeJobs.dec({ stage, tenant_id: tenantId });
+  });
+  worker.on("failed", (job) => {
+    const tenantId = (job?.data?.tenantId as string) || "unknown";
+    activeJobs.dec({ stage, tenant_id: tenantId });
+  });
 }
 
 // ─── Metrics Server ─────────────────────────────────────────────
