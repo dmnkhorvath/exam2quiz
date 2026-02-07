@@ -22,6 +22,7 @@ model Tenant {
   users                 User[]
   pipelineRuns          PipelineRun[]
   categories            TenantCategory[]
+  questions             Question[]
 
   @@map("tenants")
 }
@@ -63,6 +64,28 @@ model TenantCategory {
   @@map("tenant_categories")
 }
 
+// ─── Tenant Questions (single set per tenant, merged across runs) ──
+model Question {
+  id                String       @id @default(cuid())
+  tenantId          String
+  tenant            Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  pipelineRunId     String?
+  pipelineRun       PipelineRun? @relation(fields: [pipelineRunId], references: [id], onDelete: SetNull)
+  file              String       // image filename (unique per tenant)
+  sourcePdf         String?      // source PDF stem
+  success           Boolean      @default(true)
+  data              Json?        // ParsedQuestion: question_number, points, text, type, answer, options
+  categorization    Json?        // { success, category, reasoning }
+  similarityGroupId String?
+
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([tenantId, file])
+  @@index([tenantId, similarityGroupId])
+  @@map("questions")
+}
+
 // ─── Pipeline Runs ─────────────────────────────────────────────────
 enum PipelineStatus {
   QUEUED
@@ -90,6 +113,7 @@ model PipelineRun {
   updatedAt       DateTime       @updatedAt
 
   jobs            PipelineJob[]
+  questions       Question[]
 
   @@index([tenantId, status])
   @@map("pipeline_runs")

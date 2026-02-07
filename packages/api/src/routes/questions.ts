@@ -1,96 +1,89 @@
 import type { FastifyInstance } from "fastify";
 import { getDb } from "@exams2quiz/shared/db";
-import { getConfig } from "@exams2quiz/shared/config";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { existsSync } from "node:fs";
 
 export async function questionRoutes(app: FastifyInstance) {
-  // GET /api/questions?pipelineRunId=xxx — list questions from a completed pipeline run
-  app.get<{ Querystring: { pipelineRunId: string } }>("/api/questions", {
+  // GET /api/questions — list all tenant questions (optionally filtered)
+  app.get<{
+    Querystring: {
+      pipelineRunId?: string;
+      category?: string;
+      page?: string;
+      limit?: string;
+    };
+  }>("/api/questions", {
     preHandler: [app.authenticate],
     schema: {
       querystring: {
         type: "object",
-        required: ["pipelineRunId"],
         properties: {
           pipelineRunId: { type: "string" },
+          category: { type: "string" },
+          page: { type: "string" },
+          limit: { type: "string" },
         },
       },
     },
     handler: async (request, reply) => {
       const db = getDb();
-      const config = getConfig();
       const { role, tenantId } = request.user;
-      const { pipelineRunId } = request.query;
+      const { pipelineRunId, category, page, limit } = request.query;
 
-      const run = await db.pipelineRun.findUnique({
-        where: { id: pipelineRunId },
-      });
-
-      if (!run) {
-        return reply.code(404).send({ error: "Pipeline run not found" });
+      if (!tenantId && role !== "SUPER_ADMIN") {
+        return reply.code(400).send({ error: "User must belong to a tenant" });
       }
 
-      // Tenant scoping
-      if (role !== "SUPER_ADMIN" && run.tenantId !== tenantId) {
-        return reply.code(404).send({ error: "Pipeline run not found" });
+      // Build filter
+      const where: Record<string, unknown> = {};
+
+      if (role === "SUPER_ADMIN" && pipelineRunId) {
+        // SUPER_ADMIN can query by pipelineRunId across tenants
+        const run = await db.pipelineRun.findUnique({ where: { id: pipelineRunId } });
+        if (!run) return reply.code(404).send({ error: "Pipeline run not found" });
+        where.tenantId = run.tenantId;
+      } else if (tenantId) {
+        where.tenantId = tenantId;
       }
 
-      // Try to read the most complete question data available
-      // Priority: similarity.json > categorized.json > parsed.json
-      const outputDir = join(config.OUTPUT_DIR, run.tenantId, pipelineRunId);
-      const candidates = ["similarity.json", "categorized.json", "parsed.json"];
-
-      for (const filename of candidates) {
-        const filePath = join(outputDir, filename);
-        if (existsSync(filePath)) {
-          try {
-            const raw = await readFile(filePath, "utf-8");
-            const questions = JSON.parse(raw);
-            return {
-              pipelineRunId,
-              source: filename,
-              count: Array.isArray(questions) ? questions.length : 0,
-              questions,
-            };
-          } catch {
-            return reply.code(500).send({ error: `Failed to read ${filename}` });
-          }
-        }
+      if (pipelineRunId) {
+        where.pipelineRunId = pipelineRunId;
       }
 
-      // Check subdirectories (pdf-extract creates subdirs per PDF)
-      const { readdirSync } = await import("node:fs");
-      if (existsSync(outputDir)) {
-        const entries = readdirSync(outputDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const subDir = join(outputDir, entry.name);
-            for (const filename of candidates) {
-              const filePath = join(subDir, filename);
-              if (existsSync(filePath)) {
-                try {
-                  const raw = await readFile(filePath, "utf-8");
-                  const questions = JSON.parse(raw);
-                  return {
-                    pipelineRunId,
-                    source: filename,
-                    count: Array.isArray(questions) ? questions.length : 0,
-                    questions,
-                  };
-                } catch {
-                  return reply.code(500).send({ error: `Failed to read ${filename}` });
-                }
-              }
-            }
-          }
-        }
+      // Filter by category (stored in categorization JSON)
+      if (category) {
+        where.categorization = { path: ["category"], equals: category };
       }
 
-      return reply.code(404).send({
-        error: "No question data available yet. Pipeline may still be processing.",
-      });
+      const pageNum = Math.max(1, parseInt(page ?? "1", 10) || 1);
+      const pageSize = Math.min(500, Math.max(1, parseInt(limit ?? "100", 10) || 100));
+
+      const [questions, total] = await Promise.all([
+        db.question.findMany({
+          where,
+          orderBy: [{ file: "asc" }],
+          skip: (pageNum - 1) * pageSize,
+          take: pageSize,
+        }),
+        db.question.count({ where }),
+      ]);
+
+      return {
+        questions: questions.map((q) => ({
+          id: q.id,
+          file: q.file,
+          sourcePdf: q.sourcePdf,
+          success: q.success,
+          data: q.data,
+          categorization: q.categorization,
+          similarityGroupId: q.similarityGroupId,
+          pipelineRunId: q.pipelineRunId,
+          createdAt: q.createdAt,
+          updatedAt: q.updatedAt,
+        })),
+        total,
+        page: pageNum,
+        limit: pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      };
     },
   });
 }

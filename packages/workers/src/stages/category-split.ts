@@ -191,6 +191,15 @@ async function processCategorySplit(
       },
     });
 
+    // ─── Persist similarity_group_id back to DB ──────────────────
+    logStageEvent("category-split", "info", "updating_similarity_ids", `Updating similarity group IDs for ${data.length} questions`, { tenantId, pipelineRunId });
+    for (const item of data) {
+      await db.question.updateMany({
+        where: { tenantId, file: item.file },
+        data: { similarityGroupId: item.similarity_group_id ?? null },
+      });
+    }
+
     // This is the FINAL pipeline stage — mark the PipelineRun as completed
     await db.pipelineRun.update({
       where: { id: pipelineRunId },

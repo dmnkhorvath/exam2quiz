@@ -305,10 +305,38 @@ async function processCategorize(
 
       await writeFile(outputPath, JSON.stringify(passthrough, null, 2), "utf-8");
 
+      // Upsert questions to DB even without categorization
+      for (const q of passthrough) {
+        await db.question.upsert({
+          where: { tenantId_file: { tenantId, file: q.file } },
+          create: {
+            tenantId, pipelineRunId, file: q.file,
+            sourcePdf: q.source_folder ?? null, success: q.success,
+            data: q.data ?? undefined, categorization: q.categorization,
+          },
+          update: {
+            pipelineRunId, sourcePdf: q.source_folder ?? null,
+            success: q.success, data: q.data ?? undefined,
+            categorization: q.categorization, similarityGroupId: null,
+          },
+        });
+      }
+
+      // Load all tenant questions for similarity
+      const allTenantQs = await db.question.findMany({ where: { tenantId } });
+      const mergedCat: CategorizedQuestionEntry[] = allTenantQs.map((q) => ({
+        file: q.file, success: q.success, source_folder: q.sourcePdf ?? undefined,
+        data: q.data as CategorizedQuestionEntry["data"],
+        categorization: q.categorization as CategorizedQuestionEntry["categorization"],
+      }));
+      const mergedPath = path.join(path.dirname(outputPath), "categorized_merged.json");
+      await writeFile(mergedPath, JSON.stringify(mergedCat, null, 2), "utf-8");
+
       const skipResult = {
         totalQuestions: allQuestions.length,
         categorizedQuestions: 0,
         categorizedPath: outputPath,
+        mergedQuestions: allTenantQs.length,
       };
 
       await db.pipelineJob.updateMany({
@@ -321,11 +349,11 @@ async function processCategorize(
         },
       });
 
-      // Enqueue next stage so pipeline continues
+      // Enqueue similarity on the full tenant question set
       const nextJobData: SimilarityJobData = {
         tenantId,
         pipelineRunId,
-        inputPath: outputPath,
+        inputPath: mergedPath,
         outputPath: path.join(path.dirname(outputPath), "similarity.json"),
       };
       await addJob(
@@ -358,13 +386,24 @@ async function processCategorize(
     if (validQuestions.length === 0) {
       logStageEvent("categorize", "warn", "no_valid_questions", "No valid questions to categorize, passing empty result to next stage", { pipelineRunId });
 
+      await writeFile(outputPath, JSON.stringify([], null, 2), "utf-8");
+
+      // Load all existing tenant questions for similarity (even if no new ones)
+      const allTenantQs = await db.question.findMany({ where: { tenantId } });
+      const mergedCat: CategorizedQuestionEntry[] = allTenantQs.map((q) => ({
+        file: q.file, success: q.success, source_folder: q.sourcePdf ?? undefined,
+        data: q.data as CategorizedQuestionEntry["data"],
+        categorization: q.categorization as CategorizedQuestionEntry["categorization"],
+      }));
+      const mergedPath = path.join(path.dirname(outputPath), "categorized_merged.json");
+      await writeFile(mergedPath, JSON.stringify(mergedCat, null, 2), "utf-8");
+
       const emptyResult = {
         totalQuestions: 0,
         categorizedQuestions: 0,
         categorizedPath: outputPath,
+        mergedQuestions: allTenantQs.length,
       };
-
-      await writeFile(outputPath, JSON.stringify([], null, 2), "utf-8");
 
       await db.pipelineJob.updateMany({
         where: { pipelineRunId, stage: PipelineStage.CATEGORIZE },
@@ -376,11 +415,11 @@ async function processCategorize(
         },
       });
 
-      // Still enqueue next stage so pipeline completes
+      // Enqueue similarity on the full tenant question set
       const nextJobData: SimilarityJobData = {
         tenantId,
         pipelineRunId,
-        inputPath: outputPath,
+        inputPath: mergedPath,
         outputPath: path.join(path.dirname(outputPath), "similarity.json"),
       };
       await addJob(
@@ -421,11 +460,58 @@ async function processCategorize(
       },
     );
 
+    // Save this run's categorized questions to file (for reference)
     await writeFile(outputPath, JSON.stringify(results, null, 2), "utf-8");
 
     const categorizedCount = results.filter(
       (r) => r.categorization.success,
     ).length;
+
+    // ─── Upsert new questions into the tenant-level Question table ───
+    logStageEvent("categorize", "info", "upserting_questions", `Upserting ${results.length} questions to DB`, { tenantId, pipelineRunId });
+    for (const q of results) {
+      await db.question.upsert({
+        where: {
+          tenantId_file: { tenantId, file: q.file },
+        },
+        create: {
+          tenantId,
+          pipelineRunId,
+          file: q.file,
+          sourcePdf: q.source_folder ?? null,
+          success: q.success,
+          data: q.data ?? undefined,
+          categorization: q.categorization,
+          similarityGroupId: null,
+        },
+        update: {
+          pipelineRunId,
+          sourcePdf: q.source_folder ?? null,
+          success: q.success,
+          data: q.data ?? undefined,
+          categorization: q.categorization,
+          // Reset similarity since we'll re-run it on the full set
+          similarityGroupId: null,
+        },
+      });
+    }
+
+    // ─── Load ALL tenant questions for similarity (merge) ────────────
+    const allTenantQuestions = await db.question.findMany({
+      where: { tenantId },
+    });
+    logStageEvent("categorize", "info", "tenant_questions_merged", `Merged: ${allTenantQuestions.length} total tenant questions (${results.length} new/updated)`, { tenantId, totalQuestions: allTenantQuestions.length, newQuestions: results.length });
+
+    // Write the full tenant question set as categorized.json for similarity
+    const mergedCategorized: CategorizedQuestionEntry[] = allTenantQuestions.map((q) => ({
+      file: q.file,
+      success: q.success,
+      source_folder: q.sourcePdf ?? undefined,
+      data: q.data as CategorizedQuestionEntry["data"],
+      categorization: q.categorization as CategorizedQuestionEntry["categorization"],
+    }));
+    const mergedOutputPath = path.join(path.dirname(outputPath), "categorized_merged.json");
+    await writeFile(mergedOutputPath, JSON.stringify(mergedCategorized, null, 2), "utf-8");
 
     await job.updateProgress(100);
 
@@ -440,15 +526,16 @@ async function processCategorize(
           totalQuestions: results.length,
           categorizedQuestions: categorizedCount,
           categorizedPath: outputPath,
+          mergedQuestions: allTenantQuestions.length,
         },
       },
     });
 
-    // Enqueue next stage: similarity
+    // Enqueue next stage: similarity on the FULL tenant question set
     const nextJobData: SimilarityJobData = {
       tenantId,
       pipelineRunId,
-      inputPath: outputPath,
+      inputPath: mergedOutputPath,
       outputPath: path.join(path.dirname(outputPath), "similarity.json"),
     };
     await addJob(
