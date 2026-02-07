@@ -1,0 +1,4 @@
+{"ts":"2026-02-07T19:43:38.777560+00:00","iteration":0,"hat":"loop","topic":"merge.start","triggered":"planner","payload":"Merge loop peppy-willow from branch ralph/peppy-willow"}
+{"payload":"sha: f2dcfcf, tests: pass, lint: pass, build: pass","topic":"merge.done","ts":"2026-02-07T19:44:37.041050+00:00"}
+{"payload":{"loop_id":"peppy-willow","sha":"f2dcfcf","status":"merged"},"topic":"cleanup.done","ts":"2026-02-07T19:45:09.360249+00:00"}
+{"payload":"Loop peppy-willow merged successfully at f2dcfcf. Cleanup completed.","topic":"MERGE_COMPLETE","ts":"2026-02-07T19:45:38.615716+00:00"}

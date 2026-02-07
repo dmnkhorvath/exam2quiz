@@ -1,0 +1,5 @@
+{"ts":"2026-02-07T20:02:21.118773+00:00","iteration":0,"hat":"loop","topic":"merge.start","triggered":"planner","payload":"Merge loop peppy-willow from branch ralph/peppy-willow"}
+{"payload":"already merged to main in commits d26387c, f2dcfcf, 77642f4 - branch already cleaned up","topic":"merge.done","ts":"2026-02-07T20:02:46.631276+00:00"}
+{"payload":{"loop_id":"peppy-willow","note":"branch and worktree already cleaned up from previous iteration","status":"merged"},"topic":"cleanup.done","ts":"2026-02-07T20:03:23.876144+00:00"}
+{"payload":"Loop peppy-willow merge workflow complete. Branch merged (commits d26387c, f2dcfcf, 77642f4), worktree and branch cleaned up.","topic":"MERGE_COMPLETE","ts":"2026-02-07T20:03:52.387680+00:00"}
+{"ts":"2026-02-07T20:03:57.849616+00:00","iteration":3,"hat":"loop","topic":"loop.terminate","payload":"## Reason\ncompleted\n\n## Status\nAll tasks completed successfully.\n\n## Summary\n- Iterations: 3\n- Duration: 1m 36s\n- Exit code: 0"}
