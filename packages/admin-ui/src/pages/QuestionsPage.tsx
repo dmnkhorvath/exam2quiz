@@ -1,53 +1,54 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pipelinesApi, type PipelineRun } from "../services/pipelines";
-import { questionsApi } from "../services/questions";
 
 export default function QuestionsPage() {
   const [selectedRunId, setSelectedRunId] = useState<string>("");
-  const [page, setPage] = useState(1);
+  const [selectedFile, setSelectedFile] = useState<string>("");
 
   const { data: pipelinesData, isLoading: pipelinesLoading } = useQuery({
     queryKey: ["pipelines", { status: "COMPLETED", limit: 50 }],
     queryFn: () => pipelinesApi.list({ status: "COMPLETED", limit: 50 }),
   });
 
+  const { data: splitsData, isLoading: splitsLoading } = useQuery({
+    queryKey: ["splits", selectedRunId],
+    queryFn: () => pipelinesApi.listSplits(selectedRunId),
+    enabled: !!selectedRunId,
+  });
+
   const {
-    data: questionsData,
-    isLoading: questionsLoading,
-    error: questionsError,
+    data: splitContent,
+    isLoading: contentLoading,
+    error: contentError,
   } = useQuery({
-    queryKey: ["questions", selectedRunId, page],
-    queryFn: () =>
-      questionsApi.list({
-        pipelineRunId: selectedRunId || undefined,
-        page,
-        limit: 100,
-      }),
+    queryKey: ["split", selectedRunId, selectedFile],
+    queryFn: () => pipelinesApi.getSplit(selectedRunId, selectedFile),
+    enabled: !!selectedRunId && !!selectedFile,
   });
 
   const pipelines: PipelineRun[] = pipelinesData?.data ?? [];
-  const resp = questionsData;
+  const files = splitsData?.files ?? [];
 
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">Questions</h1>
 
-      {/* Pipeline filter (optional) */}
+      {/* Pipeline filter */}
       <div className="form-control w-full max-w-md">
         <label className="label">
-          <span className="label-text">Filter by pipeline run (optional)</span>
+          <span className="label-text">Select pipeline run</span>
         </label>
         <select
           className="select select-bordered"
           value={selectedRunId}
           onChange={(e) => {
             setSelectedRunId(e.target.value);
-            setPage(1);
+            setSelectedFile("");
           }}
           disabled={pipelinesLoading}
         >
-          <option value="">All questions (tenant-wide)</option>
+          <option value="">Select a completed pipeline run...</option>
           {pipelines.map((p) => (
             <option key={p.id} value={p.id}>
               {(p.filenames ?? []).join(", ") || p.id} — {new Date(p.createdAt).toLocaleDateString()}
@@ -56,68 +57,67 @@ export default function QuestionsPage() {
         </select>
       </div>
 
-      {/* Loading state */}
-      {questionsLoading && (
+      {/* Category tabs */}
+      {selectedRunId && !splitsLoading && files.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {files.map((file) => (
+            <button
+              key={file}
+              className={`btn btn-sm ${selectedFile === file ? "btn-primary" : "btn-outline"}`}
+              onClick={() => setSelectedFile(file)}
+            >
+              {file.replace(/\.json$/, "")}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Loading states */}
+      {(splitsLoading || contentLoading) && (
         <div className="flex items-center gap-2">
           <span className="loading loading-spinner loading-sm" />
-          <span>Loading questions...</span>
+          <span>{splitsLoading ? "Loading categories..." : "Loading questions..."}</span>
         </div>
       )}
 
       {/* Error state */}
-      {questionsError && (
+      {contentError && (
         <div className="alert alert-error">
           <span>
-            {questionsError instanceof Error
-              ? questionsError.message
-              : "Failed to load questions"}
+            {contentError instanceof Error ? contentError.message : "Failed to load split file"}
           </span>
         </div>
       )}
 
-      {/* Questions data */}
-      {resp && (
+      {/* Split content */}
+      {splitContent && (
         <div className="space-y-4">
           <div className="flex items-center gap-4 text-sm text-base-content/60">
-            <span>Total: {resp.total}</span>
-            <span>Page: {resp.page}/{resp.totalPages}</span>
+            <span>Category: {splitContent.category_name}</span>
+            <span>Groups: {splitContent.groups.length}</span>
+            <span>
+              Questions: {splitContent.groups.reduce((sum, g) => sum + g.length, 0)}
+            </span>
           </div>
 
           <div className="mockup-code max-h-[70vh] overflow-auto">
             <pre className="px-4">
-              <code>{JSON.stringify(resp.questions, null, 2)}</code>
+              <code>{JSON.stringify(splitContent, null, 2)}</code>
             </pre>
           </div>
-
-          {/* Pagination */}
-          {resp.totalPages > 1 && (
-            <div className="join">
-              <button
-                className="join-item btn btn-sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </button>
-              <button className="join-item btn btn-sm btn-disabled">
-                Page {resp.page} of {resp.totalPages}
-              </button>
-              <button
-                className="join-item btn btn-sm"
-                disabled={page >= resp.totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </button>
-            </div>
-          )}
         </div>
       )}
 
-      {/* Empty state */}
-      {!questionsLoading && resp && resp.total === 0 && (
+      {/* Empty states */}
+      {!selectedRunId && (
         <div className="text-base-content/50 text-sm">
-          No questions found. Run a pipeline to extract questions.
+          Select a pipeline run to view category split results.
+        </div>
+      )}
+
+      {selectedRunId && !splitsLoading && files.length === 0 && (
+        <div className="text-base-content/50 text-sm">
+          No category split files found for this pipeline run.
         </div>
       )}
     </div>

@@ -57,4 +57,10 @@ export const pipelinesApi = {
 
   merge: (pipelineRunIds: string[]) =>
     api.post<PipelineRun>("/pipelines/merge", { pipelineRunIds }),
+
+  listSplits: (id: string) =>
+    api.get<{ files: string[] }>(`/pipelines/${id}/splits`),
+
+  getSplit: (id: string, filename: string) =>
+    api.get<{ category_name: string; groups: unknown[][] }>(`/pipelines/${id}/splits/${filename}`),
 };

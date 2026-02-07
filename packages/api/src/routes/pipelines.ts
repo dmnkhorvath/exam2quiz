@@ -4,7 +4,7 @@ import { getDb } from "@exams2quiz/shared/db";
 import { addJob } from "@exams2quiz/shared/queue";
 import { PipelineStage } from "@exams2quiz/shared/types";
 import { getConfig } from "@exams2quiz/shared/config";
-import { mkdir, writeFile, rm, readFile } from "node:fs/promises";
+import { mkdir, writeFile, rm, readFile, readdir } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
@@ -373,6 +373,61 @@ export async function pipelineRoutes(app: FastifyInstance) {
       await rm(uploadDir, { recursive: true, force: true });
 
       return reply.code(204).send();
+    },
+  });
+
+  // GET /api/pipelines/:id/splits — list available category split files
+  app.get<{ Params: { id: string } }>("/api/pipelines/:id/splits", {
+    preHandler: [app.authenticate],
+    handler: async (request, reply) => {
+      const db = getDb();
+      const config = getConfig();
+      const { role, tenantId } = request.user;
+
+      const run = await db.pipelineRun.findUnique({ where: { id: request.params.id } });
+      if (!run) return reply.code(404).send({ error: "Pipeline run not found" });
+      if (role !== "SUPER_ADMIN" && run.tenantId !== tenantId) {
+        return reply.code(404).send({ error: "Pipeline run not found" });
+      }
+
+      const splitDir = join(config.OUTPUT_DIR, run.tenantId, run.id, "split");
+      try {
+        const entries = await readdir(splitDir);
+        const files = entries.filter((f) => f.endsWith(".json")).sort();
+        return { files };
+      } catch {
+        return { files: [] };
+      }
+    },
+  });
+
+  // GET /api/pipelines/:id/splits/:filename — get a specific category split file
+  app.get<{ Params: { id: string; filename: string } }>("/api/pipelines/:id/splits/:filename", {
+    preHandler: [app.authenticate],
+    handler: async (request, reply) => {
+      const db = getDb();
+      const config = getConfig();
+      const { role, tenantId } = request.user;
+      const { filename } = request.params;
+
+      // Validate filename to prevent path traversal
+      if (!filename.endsWith(".json") || filename.includes("/") || filename.includes("..")) {
+        return reply.code(400).send({ error: "Invalid filename" });
+      }
+
+      const run = await db.pipelineRun.findUnique({ where: { id: request.params.id } });
+      if (!run) return reply.code(404).send({ error: "Pipeline run not found" });
+      if (role !== "SUPER_ADMIN" && run.tenantId !== tenantId) {
+        return reply.code(404).send({ error: "Pipeline run not found" });
+      }
+
+      const filePath = join(config.OUTPUT_DIR, run.tenantId, run.id, "split", filename);
+      try {
+        const content = await readFile(filePath, "utf-8");
+        return JSON.parse(content);
+      } catch {
+        return reply.code(404).send({ error: "Split file not found" });
+      }
     },
   });
 

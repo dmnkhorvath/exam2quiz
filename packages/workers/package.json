@@ -12,7 +12,9 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@exams2quiz/shared": "*",
+    "@prisma/client": "^6.3.0",
+    "@exams2quiz/shared": "workspace:*",
+    "bullmq": "^5.34.0",
     "fastify": "^5.0.0",
     "@google/generative-ai": "^0.21.0",
     "mupdf": "^1.27.0",
