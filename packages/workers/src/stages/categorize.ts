@@ -259,6 +259,56 @@ async function categorizeWithConcurrency(
   return results;
 }
 
+// ─── Enqueue next stage or complete child run ─────────────────────
+async function enqueueNextStageOrComplete(
+  tenantId: string,
+  pipelineRunId: string,
+  mergedPath: string,
+  outputPath: string,
+): Promise<void> {
+  const db = getDb();
+
+  // Check if this is a child run in a batch
+  const run = await db.pipelineRun.findUniqueOrThrow({
+    where: { id: pipelineRunId },
+    select: { parentRunId: true },
+  });
+
+  if (run.parentRunId) {
+    // Child batch run — do NOT enqueue similarity.
+    // Mark this child as COMPLETED; the batch coordinator handles similarity.
+    await db.pipelineRun.update({
+      where: { id: pipelineRunId },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
+    logStageEvent("categorize", "info", "child_run_completed", "Batch child run completed at categorize stage — skipping similarity", { tenantId, pipelineRunId, parentRunId: run.parentRunId });
+    return;
+  }
+
+  // Standalone run — enqueue similarity on the full tenant question set
+  const nextJobData: SimilarityJobData = {
+    tenantId,
+    pipelineRunId,
+    inputPath: mergedPath,
+    outputPath: path.join(path.dirname(outputPath), "similarity.json"),
+  };
+  await addJob(
+    PipelineStage.SIMILARITY,
+    nextJobData as unknown as Record<string, unknown>,
+  );
+  await db.pipelineJob.create({
+    data: {
+      pipelineRunId,
+      stage: PipelineStage.SIMILARITY,
+      status: "PENDING",
+    },
+  });
+  await db.pipelineRun.update({
+    where: { id: pipelineRunId },
+    data: { currentStage: PipelineStage.SIMILARITY },
+  });
+}
+
 // ─── BullMQ Processor ─────────────────────────────────────────────
 async function processCategorize(
   job: Job<CategorizeJobData>,
@@ -360,28 +410,8 @@ async function processCategorize(
         },
       });
 
-      // Enqueue similarity on the full tenant question set
-      const nextJobData: SimilarityJobData = {
-        tenantId,
-        pipelineRunId,
-        inputPath: mergedPath,
-        outputPath: path.join(path.dirname(outputPath), "similarity.json"),
-      };
-      await addJob(
-        PipelineStage.SIMILARITY,
-        nextJobData as unknown as Record<string, unknown>,
-      );
-      await db.pipelineJob.create({
-        data: {
-          pipelineRunId,
-          stage: PipelineStage.SIMILARITY,
-          status: "PENDING",
-        },
-      });
-      await db.pipelineRun.update({
-        where: { id: pipelineRunId },
-        data: { currentStage: PipelineStage.SIMILARITY },
-      });
+      // Enqueue similarity or complete child run
+      await enqueueNextStageOrComplete(tenantId, pipelineRunId, mergedPath, outputPath);
 
       return skipResult;
     }
@@ -426,28 +456,8 @@ async function processCategorize(
         },
       });
 
-      // Enqueue similarity on the full tenant question set
-      const nextJobData: SimilarityJobData = {
-        tenantId,
-        pipelineRunId,
-        inputPath: mergedPath,
-        outputPath: path.join(path.dirname(outputPath), "similarity.json"),
-      };
-      await addJob(
-        PipelineStage.SIMILARITY,
-        nextJobData as unknown as Record<string, unknown>,
-      );
-      await db.pipelineJob.create({
-        data: {
-          pipelineRunId,
-          stage: PipelineStage.SIMILARITY,
-          status: "PENDING",
-        },
-      });
-      await db.pipelineRun.update({
-        where: { id: pipelineRunId },
-        data: { currentStage: PipelineStage.SIMILARITY },
-      });
+      // Enqueue similarity or complete child run
+      await enqueueNextStageOrComplete(tenantId, pipelineRunId, mergedPath, outputPath);
 
       return emptyResult;
     }
@@ -540,31 +550,8 @@ async function processCategorize(
       },
     });
 
-    // Enqueue next stage: similarity on the FULL tenant question set
-    const nextJobData: SimilarityJobData = {
-      tenantId,
-      pipelineRunId,
-      inputPath: mergedOutputPath,
-      outputPath: path.join(path.dirname(outputPath), "similarity.json"),
-    };
-    await addJob(
-      PipelineStage.SIMILARITY,
-      nextJobData as unknown as Record<string, unknown>,
-    );
-
-    // Create pipeline job record for next stage
-    await db.pipelineJob.create({
-      data: {
-        pipelineRunId,
-        stage: PipelineStage.SIMILARITY,
-        status: "PENDING",
-      },
-    });
-
-    await db.pipelineRun.update({
-      where: { id: pipelineRunId },
-      data: { currentStage: PipelineStage.SIMILARITY },
-    });
+    // Enqueue similarity or complete child run
+    await enqueueNextStageOrComplete(tenantId, pipelineRunId, mergedOutputPath, outputPath);
 
     const failedCount = results.length - categorizedCount;
     logStageEvent("categorize", "info", "job_completed", `Categorized ${categorizedCount}/${results.length} questions`, { pipelineRunId, categorizedCount, failedCount });
