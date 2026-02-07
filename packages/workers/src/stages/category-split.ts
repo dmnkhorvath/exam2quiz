@@ -193,16 +193,11 @@ async function processCategorySplit(
 
     // ─── Persist similarity_group_id back to DB ──────────────────
     logStageEvent("category-split", "info", "updating_similarity_ids", `Updating similarity group IDs for ${data.length} questions`, { tenantId, pipelineRunId });
-    if (data.length > 0) {
-      await db.$executeRaw`
-        UPDATE questions AS q
-        SET similarity_group_id = v.similarity_group_id, updated_at = NOW()
-        FROM jsonb_to_recordset(${JSON.stringify(data.map(item => ({
-          file: item.file,
-          similarity_group_id: item.similarity_group_id ?? null,
-        })))}::jsonb) AS v(file text, similarity_group_id text)
-        WHERE q.tenant_id = ${tenantId} AND q.file = v.file
-      `;
+    for (const item of data) {
+      await db.question.update({
+        where: { tenantId_file: { tenantId, file: item.file } },
+        data: { similarityGroupId: item.similarity_group_id ?? null },
+      });
     }
 
     // This is the FINAL pipeline stage — mark the PipelineRun as completed
