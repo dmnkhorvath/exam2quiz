@@ -309,20 +309,26 @@ async function processCategorize(
 
       // Upsert questions + load all tenant questions atomically
       const allTenantQs = await db.$transaction(async (tx) => {
-        for (const q of passthrough) {
-          await tx.question.upsert({
-            where: { tenantId_file: { tenantId, file: q.file } },
-            create: {
-              tenantId, pipelineRunId, file: q.file,
-              sourcePdf: q.source_folder ?? null, success: q.success,
-              data: q.data ?? undefined, categorization: q.categorization,
-            },
-            update: {
-              pipelineRunId, sourcePdf: q.source_folder ?? null,
-              success: q.success, data: q.data ?? undefined,
-              categorization: q.categorization, similarityGroupId: null,
-            },
-          });
+        if (passthrough.length > 0) {
+          await tx.$executeRaw`
+            INSERT INTO questions (id, tenant_id, pipeline_run_id, file, source_pdf, success, data, categorization, similarity_group_id, created_at, updated_at)
+            SELECT gen_random_uuid(), ${tenantId}, ${pipelineRunId}, v.file, v.source_pdf, v.success, v.data, v.categorization, NULL, NOW(), NOW()
+            FROM jsonb_to_recordset(${JSON.stringify(passthrough.map(q => ({
+              file: q.file,
+              source_pdf: q.source_folder ?? null,
+              success: q.success,
+              data: q.data ?? null,
+              categorization: q.categorization,
+            })))}::jsonb) AS v(file text, source_pdf text, success boolean, data jsonb, categorization jsonb)
+            ON CONFLICT (tenant_id, file) DO UPDATE SET
+              pipeline_run_id = EXCLUDED.pipeline_run_id,
+              source_pdf = EXCLUDED.source_pdf,
+              success = EXCLUDED.success,
+              data = EXCLUDED.data,
+              categorization = EXCLUDED.categorization,
+              similarity_group_id = NULL,
+              updated_at = NOW()
+          `;
         }
 
         return tx.question.findMany({ where: { tenantId } });
@@ -475,30 +481,26 @@ async function processCategorize(
     // from reading an inconsistent merged question set.
     logStageEvent("categorize", "info", "upserting_questions", `Upserting ${results.length} questions to DB`, { tenantId, pipelineRunId });
     const allTenantQuestions = await db.$transaction(async (tx) => {
-      for (const q of results) {
-        await tx.question.upsert({
-          where: {
-            tenantId_file: { tenantId, file: q.file },
-          },
-          create: {
-            tenantId,
-            pipelineRunId,
+      if (results.length > 0) {
+        await tx.$executeRaw`
+          INSERT INTO questions (id, tenant_id, pipeline_run_id, file, source_pdf, success, data, categorization, similarity_group_id, created_at, updated_at)
+          SELECT gen_random_uuid(), ${tenantId}, ${pipelineRunId}, v.file, v.source_pdf, v.success, v.data, v.categorization, NULL, NOW(), NOW()
+          FROM jsonb_to_recordset(${JSON.stringify(results.map(q => ({
             file: q.file,
-            sourcePdf: q.source_folder ?? null,
+            source_pdf: q.source_folder ?? null,
             success: q.success,
-            data: q.data ?? undefined,
+            data: q.data ?? null,
             categorization: q.categorization,
-            similarityGroupId: null,
-          },
-          update: {
-            pipelineRunId,
-            sourcePdf: q.source_folder ?? null,
-            success: q.success,
-            data: q.data ?? undefined,
-            categorization: q.categorization,
-            similarityGroupId: null,
-          },
-        });
+          })))}::jsonb) AS v(file text, source_pdf text, success boolean, data jsonb, categorization jsonb)
+          ON CONFLICT (tenant_id, file) DO UPDATE SET
+            pipeline_run_id = EXCLUDED.pipeline_run_id,
+            source_pdf = EXCLUDED.source_pdf,
+            success = EXCLUDED.success,
+            data = EXCLUDED.data,
+            categorization = EXCLUDED.categorization,
+            similarity_group_id = NULL,
+            updated_at = NOW()
+        `;
       }
 
       return tx.question.findMany({ where: { tenantId } });
