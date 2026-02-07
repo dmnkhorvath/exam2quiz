@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
 import { questionsApi, type FlaggedQuestion } from "../services/questions";
 import { tenantsApi } from "../services/tenants";
+import { getToken } from "../services/api";
 
 export default function FlaggedQuestionsPage() {
   const { isSuperAdmin } = useAuth();
@@ -144,7 +145,26 @@ export default function FlaggedQuestionsPage() {
                       {isSuperAdmin && (
                         <span className="badge badge-outline badge-sm">{q.tenantName}</span>
                       )}
-                      <span className="badge badge-ghost badge-sm">{q.file}</span>
+                      {q.file.match(/\.(png|jpe?g)$/i) ? (
+                        <div className="dropdown dropdown-hover dropdown-bottom">
+                          <span tabIndex={0} className="badge badge-ghost badge-sm cursor-pointer underline decoration-dotted">
+                            {q.file}
+                          </span>
+                          <div className="dropdown-content z-50 p-2 shadow-lg bg-base-100 rounded-box w-96">
+                            <img
+                              src={`/api/questions/${q.id}/image?token=${encodeURIComponent(getToken() ?? "")}`}
+                              alt={q.file}
+                              className="w-full rounded"
+                              loading="lazy"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="badge badge-ghost badge-sm">{q.file}</span>
+                      )}
                       {q.categorization?.category && (
                         <span className="badge badge-info badge-sm">
                           {q.categorization.category}
