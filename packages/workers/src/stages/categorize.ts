@@ -8,6 +8,8 @@ import {
   SchemaType,
 } from "@google/generative-ai";
 
+import { Prisma } from "@prisma/client";
+
 import {
   PipelineStage,
   type CategorizeJobData,
@@ -305,25 +307,26 @@ async function processCategorize(
 
       await writeFile(outputPath, JSON.stringify(passthrough, null, 2), "utf-8");
 
-      // Upsert questions to DB even without categorization
-      for (const q of passthrough) {
-        await db.question.upsert({
-          where: { tenantId_file: { tenantId, file: q.file } },
-          create: {
-            tenantId, pipelineRunId, file: q.file,
-            sourcePdf: q.source_folder ?? null, success: q.success,
-            data: q.data ?? undefined, categorization: q.categorization,
-          },
-          update: {
-            pipelineRunId, sourcePdf: q.source_folder ?? null,
-            success: q.success, data: q.data ?? undefined,
-            categorization: q.categorization, similarityGroupId: null,
-          },
-        });
-      }
+      // Upsert questions + load all tenant questions atomically
+      const allTenantQs = await db.$transaction(async (tx) => {
+        for (const q of passthrough) {
+          await tx.question.upsert({
+            where: { tenantId_file: { tenantId, file: q.file } },
+            create: {
+              tenantId, pipelineRunId, file: q.file,
+              sourcePdf: q.source_folder ?? null, success: q.success,
+              data: q.data ?? undefined, categorization: q.categorization,
+            },
+            update: {
+              pipelineRunId, sourcePdf: q.source_folder ?? null,
+              success: q.success, data: q.data ?? undefined,
+              categorization: q.categorization, similarityGroupId: null,
+            },
+          });
+        }
 
-      // Load all tenant questions for similarity
-      const allTenantQs = await db.question.findMany({ where: { tenantId } });
+        return tx.question.findMany({ where: { tenantId } });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
       const mergedCat: CategorizedQuestionEntry[] = allTenantQs.map((q) => ({
         file: q.file, success: q.success, source_folder: q.sourcePdf ?? undefined,
         data: q.data as CategorizedQuestionEntry["data"],
@@ -467,39 +470,39 @@ async function processCategorize(
       (r) => r.categorization.success,
     ).length;
 
-    // ─── Upsert new questions into the tenant-level Question table ───
+    // ─── Upsert new questions + load all tenant questions atomically ──
+    // Serializable isolation prevents concurrent same-tenant pipelines
+    // from reading an inconsistent merged question set.
     logStageEvent("categorize", "info", "upserting_questions", `Upserting ${results.length} questions to DB`, { tenantId, pipelineRunId });
-    for (const q of results) {
-      await db.question.upsert({
-        where: {
-          tenantId_file: { tenantId, file: q.file },
-        },
-        create: {
-          tenantId,
-          pipelineRunId,
-          file: q.file,
-          sourcePdf: q.source_folder ?? null,
-          success: q.success,
-          data: q.data ?? undefined,
-          categorization: q.categorization,
-          similarityGroupId: null,
-        },
-        update: {
-          pipelineRunId,
-          sourcePdf: q.source_folder ?? null,
-          success: q.success,
-          data: q.data ?? undefined,
-          categorization: q.categorization,
-          // Reset similarity since we'll re-run it on the full set
-          similarityGroupId: null,
-        },
-      });
-    }
+    const allTenantQuestions = await db.$transaction(async (tx) => {
+      for (const q of results) {
+        await tx.question.upsert({
+          where: {
+            tenantId_file: { tenantId, file: q.file },
+          },
+          create: {
+            tenantId,
+            pipelineRunId,
+            file: q.file,
+            sourcePdf: q.source_folder ?? null,
+            success: q.success,
+            data: q.data ?? undefined,
+            categorization: q.categorization,
+            similarityGroupId: null,
+          },
+          update: {
+            pipelineRunId,
+            sourcePdf: q.source_folder ?? null,
+            success: q.success,
+            data: q.data ?? undefined,
+            categorization: q.categorization,
+            similarityGroupId: null,
+          },
+        });
+      }
 
-    // ─── Load ALL tenant questions for similarity (merge) ────────────
-    const allTenantQuestions = await db.question.findMany({
-      where: { tenantId },
-    });
+      return tx.question.findMany({ where: { tenantId } });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
     logStageEvent("categorize", "info", "tenant_questions_merged", `Merged: ${allTenantQuestions.length} total tenant questions (${results.length} new/updated)`, { tenantId, totalQuestions: allTenantQuestions.length, newQuestions: results.length });
 
     // Write the full tenant question set as categorized.json for similarity
