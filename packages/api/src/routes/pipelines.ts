@@ -38,7 +38,33 @@ export async function pipelineRoutes(app: FastifyInstance) {
     handler: async (request, reply) => {
       const db = getDb();
       const config = getConfig();
-      const { tenantId } = request.user;
+      const { role, tenantId: jwtTenantId } = request.user;
+
+      const allFilenames: string[] = [];
+      const allPdfPaths: string[] = [];
+      const allSourceUrls: string[] = [];
+      let urlsText = "";
+      let formTenantId = "";
+
+      // Process multipart parts (files + fields) first to extract tenantId field
+      const parts = request.parts();
+      // We need a temporary list of file parts to process after we know the tenantId
+      const fileParts: { filename: string; mimetype: string; file: MultipartFile["file"] }[] = [];
+      for await (const part of parts) {
+        if (part.type === "file") {
+          const filePart = part as MultipartFile;
+          fileParts.push({ filename: filePart.filename, mimetype: filePart.mimetype, file: filePart.file });
+        } else {
+          if (part.fieldname === "urls") {
+            urlsText = (part as { value: string }).value;
+          } else if (part.fieldname === "tenantId") {
+            formTenantId = (part as { value: string }).value;
+          }
+        }
+      }
+
+      // For SUPER_ADMIN, use tenantId from form data; otherwise use JWT tenantId
+      const tenantId = role === "SUPER_ADMIN" && formTenantId ? formTenantId : jwtTenantId;
 
       if (!tenantId) {
         return reply.code(400).send({ error: "User must belong to a tenant to start pipelines" });
@@ -73,34 +99,19 @@ export async function pipelineRoutes(app: FastifyInstance) {
       const uploadDir = join(config.UPLOAD_DIR, tenantId, pipelineRun.id);
       await mkdir(uploadDir, { recursive: true });
 
-      const allFilenames: string[] = [];
-      const allPdfPaths: string[] = [];
-      const allSourceUrls: string[] = [];
-      let urlsText = "";
-
-      // Process multipart parts (files + fields)
-      const parts = request.parts();
-      for await (const part of parts) {
-        if (part.type === "file") {
-          const filePart = part as MultipartFile;
-          if (filePart.mimetype !== "application/pdf") {
-            // Clean up the created run on validation error
-            await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
-            return reply.code(400).send({ error: `File "${filePart.filename}" is not a PDF` });
-          }
-
-          const pdfPath = join(uploadDir, filePart.filename);
-          await pipeline(filePart.file, createWriteStream(pdfPath));
-
-          allFilenames.push(filePart.filename);
-          allPdfPaths.push(pdfPath);
-          filesDownloadedTotal.inc({ tenant_id: tenantId, source: "upload" });
-        } else {
-          // Field part
-          if (part.fieldname === "urls") {
-            urlsText = (part as { value: string }).value;
-          }
+      // Process buffered file parts
+      for (const filePart of fileParts) {
+        if (filePart.mimetype !== "application/pdf") {
+          await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
+          return reply.code(400).send({ error: `File "${filePart.filename}" is not a PDF` });
         }
+
+        const pdfPath = join(uploadDir, filePart.filename);
+        await pipeline(filePart.file, createWriteStream(pdfPath));
+
+        allFilenames.push(filePart.filename);
+        allPdfPaths.push(pdfPath);
+        filesDownloadedTotal.inc({ tenant_id: tenantId, source: "upload" });
       }
 
       // Process URLs from the urls field

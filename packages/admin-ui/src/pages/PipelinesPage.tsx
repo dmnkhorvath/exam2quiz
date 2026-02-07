@@ -37,8 +37,8 @@ export default function PipelinesPage() {
   const canSubmit = selectedFiles.length > 0 || urls.trim().length > 0;
 
   const uploadMut = useMutation({
-    mutationFn: ({ files, urls: u }: { files: File[]; urls: string }) =>
-      pipelinesApi.upload(files, u),
+    mutationFn: ({ files, urls: u, tenantId }: { files: File[]; urls: string; tenantId?: string }) =>
+      pipelinesApi.upload(files, u, tenantId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pipelines"] });
       setSelectedFiles([]);
@@ -142,7 +142,7 @@ export default function PipelinesPage() {
           <button
             className="btn btn-primary btn-sm"
             disabled={!canSubmit || uploadMut.isPending}
-            onClick={() => uploadMut.mutate({ files: selectedFiles, urls })}
+            onClick={() => uploadMut.mutate({ files: selectedFiles, urls, tenantId: isSuperAdmin ? effectiveTenantId : undefined })}
           >
             Start Pipeline
           </button>

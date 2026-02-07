@@ -56,10 +56,11 @@ export const pipelinesApi = {
 
   get: (id: string) => api.get<PipelineRun>(`/pipelines/${id}`),
 
-  upload: (files: File[], urls: string) => {
+  upload: (files: File[], urls: string, tenantId?: string) => {
     const form = new FormData();
     for (const f of files) form.append("files", f);
     if (urls.trim()) form.append("urls", urls.trim());
+    if (tenantId) form.append("tenantId", tenantId);
     return api.post<PipelineRun>("/pipelines", form);
   },
 
