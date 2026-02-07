@@ -54,9 +54,20 @@ function getCacheClient(): IORedis {
   return cacheRedis;
 }
 
-async function getCached(key: string): Promise<string | null> {
+interface CacheEntry {
+  html: string;
+  cachedAt: number; // epoch ms
+}
+
+async function getCached(key: string): Promise<CacheEntry | null> {
   try {
-    return await getCacheClient().get(key);
+    const raw = await getCacheClient().get(key);
+    if (!raw) return null;
+    // Support both new JSON format and legacy raw HTML
+    if (raw.startsWith("{")) {
+      return JSON.parse(raw) as CacheEntry;
+    }
+    return { html: raw, cachedAt: 0 };
   } catch {
     return null;
   }
@@ -64,10 +75,19 @@ async function getCached(key: string): Promise<string | null> {
 
 async function setCached(key: string, html: string, ttl: number): Promise<void> {
   try {
-    await getCacheClient().set(key, html, "EX", ttl);
+    const entry: CacheEntry = { html, cachedAt: Date.now() };
+    await getCacheClient().set(key, JSON.stringify(entry), "EX", ttl);
   } catch {
     // cache write failures are non-critical
   }
+}
+
+/** Inject a "cached since" badge into HTML before </body> */
+function injectCacheBadge(html: string, cachedAt: number): string {
+  if (!cachedAt) return html;
+  const badge = `<div style="position:fixed;bottom:8px;right:8px;z-index:50;opacity:0.6;pointer-events:none" class="text-xs text-base-content/50"><span data-cached-at="${cachedAt}"></span></div>
+<script>(function(){var el=document.querySelector('[data-cached-at]');if(el){var t=parseInt(el.dataset.cachedAt);if(t){var d=new Date(t);el.textContent='Cached since '+d.toLocaleTimeString();}}})()</script>`;
+  return html.replace("</body>", badge + "\n</body>");
 }
 
 // ─── HTML helpers ────────────────────────────────────────────────
@@ -573,7 +593,7 @@ export async function publicRoutes(app: FastifyInstance) {
       const cached = await getCached(cacheKey);
       if (cached) {
         reply.type("text/html; charset=utf-8");
-        return reply.send(cached);
+        return reply.send(injectCacheBadge(cached.html, cached.cachedAt));
       }
 
       const db = getDb();
@@ -617,7 +637,7 @@ export async function publicRoutes(app: FastifyInstance) {
       const cached = await getCached(cacheKey);
       if (cached) {
         reply.type("text/html; charset=utf-8");
-        return reply.send(cached);
+        return reply.send(injectCacheBadge(cached.html, cached.cachedAt));
       }
 
       const db = getDb();
@@ -670,7 +690,7 @@ export async function publicRoutes(app: FastifyInstance) {
         const cached = await getCached(cacheKey);
         if (cached) {
           reply.type("text/html; charset=utf-8");
-          return reply.send(cached);
+          return reply.send(injectCacheBadge(cached.html, cached.cachedAt));
         }
 
         const db = getDb();
