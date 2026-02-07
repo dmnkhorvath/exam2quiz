@@ -1,6 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { tenantSettingsApi } from "../services/tenant-settings";
+
+function applyTheme(choice: string) {
+  const resolved = choice === "system"
+    ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+    : choice;
+  document.documentElement.setAttribute("data-theme", resolved);
+  localStorage.setItem("theme", choice);
+}
+
 export default function SettingsPage() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -32,9 +41,35 @@ export default function SettingsPage() {
     );
   }
 
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "system");
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => { if (theme === "system") applyTheme("system"); };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [theme]);
+
   return (
     <div className="p-6 max-w-2xl space-y-6">
-      <h1 className="text-2xl font-bold">Tenant Settings</h1>
+      <h1 className="text-2xl font-bold">Settings</h1>
+
+      <div className="card bg-base-100 shadow">
+        <div className="card-body">
+          <div className="text-sm text-base-content/60 mb-2">Theme</div>
+          <div className="flex gap-2">
+            {(["system", "light", "dark"] as const).map((t) => (
+              <button
+                key={t}
+                className={`btn btn-sm ${theme === t ? "btn-primary" : "btn-outline"}`}
+                onClick={() => { setTheme(t); applyTheme(t); }}
+              >
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {settings && (
         <div className="card bg-base-100 shadow">
