@@ -195,7 +195,7 @@ Correct Answer: ${data.correct_answer}`;
         config: {
           systemInstruction: systemPrompt,
           temperature: 0.1,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 2048,
           responseMimeType: "application/json",
           responseSchema: buildResponseSchema(categories),
         },

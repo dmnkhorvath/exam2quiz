@@ -135,7 +135,7 @@ async function parseSingleImage(
         ],
         config: {
           temperature: 0.1,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
           responseMimeType: "application/json",
           responseSchema: PARSE_RESPONSE_SCHEMA,
         },

@@ -309,7 +309,7 @@ export async function questionRoutes(app: FastifyInstance) {
         ],
         config: {
           temperature: 0.1,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
           responseMimeType: "application/json",
           responseSchema: PARSE_RESPONSE_SCHEMA,
         },
@@ -373,7 +373,7 @@ export async function questionRoutes(app: FastifyInstance) {
         config: {
           systemInstruction: systemPrompt,
           temperature: 0.1,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 2048,
           responseMimeType: "application/json",
           responseSchema,
         },
