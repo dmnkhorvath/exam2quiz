@@ -33,14 +33,6 @@ export default function SettingsPage() {
     },
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <span className="loading loading-spinner" />
-      </div>
-    );
-  }
-
   const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "system");
 
   useEffect(() => {
@@ -49,6 +41,14 @@ export default function SettingsPage() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <span className="loading loading-spinner" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-2xl space-y-6">

@@ -80,6 +80,54 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
+/** Convert markdown text to safe HTML, rendering pipe tables as <table> elements */
+function markdownToHtml(raw: string): string {
+  const lines = raw.split("\n");
+  const out: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    // Detect markdown table: a row of |...|, followed by a separator |---|...|
+    if (
+      i + 1 < lines.length &&
+      lines[i].trim().startsWith("|") &&
+      lines[i].trim().endsWith("|") &&
+      /^\|[\s:-]+(\|[\s:-]+)+\|$/.test(lines[i + 1].trim())
+    ) {
+      // Parse header
+      const headerCells = lines[i].trim().slice(1, -1).split("|").map(c => c.trim());
+      i += 2; // skip header + separator
+
+      // Parse body rows
+      const bodyRows: string[][] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        bodyRows.push(lines[i].trim().slice(1, -1).split("|").map(c => c.trim()));
+        i++;
+      }
+
+      let table = `<table class="table table-zebra table-sm w-auto"><thead><tr>`;
+      for (const cell of headerCells) {
+        table += `<th>${escapeHtml(cell)}</th>`;
+      }
+      table += `</tr></thead><tbody>`;
+      for (const row of bodyRows) {
+        table += `<tr>`;
+        for (const cell of row) {
+          table += `<td>${escapeHtml(cell)}</td>`;
+        }
+        table += `</tr>`;
+      }
+      table += `</tbody></table>`;
+      out.push(table);
+    } else {
+      out.push(escapeHtml(lines[i]));
+      i++;
+    }
+  }
+
+  return out.join("<br>");
+}
+
 function htmlShell(title: string, body: string, extraHead = ""): string {
   return `<!DOCTYPE html>
 <html lang="hu">
@@ -240,6 +288,7 @@ function renderSubcategoryPage(
   categoryKey: string,
   subcategoryName: string,
   groups: QuestionItem[][],
+  markedWrongFiles: Set<string> = new Set(),
 ): string {
   const tenantUrl = `/${encodeURIComponent(tenant.slug)}`;
   const catUrl = `/${encodeURIComponent(tenant.slug)}/${encodeURIComponent(categoryKey)}`;
@@ -259,8 +308,8 @@ function renderSubcategoryPage(
     const count = group.length;
     const qType = item.data?.question_type || "open";
     const points = item.data?.points;
-    const questionText = escapeHtml(item.data?.question_text || "").replace(/\n/g, "<br>");
-    const answerText = escapeHtml(item.data?.correct_answer || "").replace(/\n/g, "<br>");
+    const questionText = markdownToHtml(item.data?.question_text || "");
+    const answerText = markdownToHtml(item.data?.correct_answer || "");
 
     // Badge colors by type
     const typeBadge =
@@ -275,17 +324,22 @@ function renderSubcategoryPage(
     if (item.data?.options && item.data.options.length > 0) {
       optionsHtml = `<ul class="list-disc list-inside space-y-1 mt-3 text-sm">`;
       for (const opt of item.data.options) {
-        optionsHtml += `<li>${escapeHtml(opt)}</li>`;
+        optionsHtml += `<li>${markdownToHtml(opt)}</li>`;
       }
       optionsHtml += `</ul>`;
     }
 
-    questionCards += `<div class="card bg-base-100 shadow-sm question-card" data-search="${escapeHtml((item.data?.question_text || "").toLowerCase() + " " + (item.data?.correct_answer || "").toLowerCase())}">
+    const isMarkedWrong = markedWrongFiles.has(item.file);
+    const wrongBadge = isMarkedWrong ? `<span class="badge badge-error badge-sm">Reported</span>` : "";
+    const cardBorder = isMarkedWrong ? ` border border-error/30` : "";
+
+    questionCards += `<div class="card bg-base-100 shadow-sm question-card${cardBorder}" data-file="${escapeHtml(item.file)}" data-search="${escapeHtml((item.data?.question_text || "").toLowerCase() + " " + (item.data?.correct_answer || "").toLowerCase())}">
       <div class="card-body p-4">
         <div class="flex items-center gap-2 mb-2">
           ${typeBadge}
           ${points ? `<span class="badge badge-secondary badge-sm">${points} pt</span>` : ""}
           ${count > 1 ? `<span class="badge badge-warning badge-sm">&times;${count}</span>` : ""}
+          ${wrongBadge}
         </div>
         <div class="prose prose-sm max-w-none">${questionText}</div>
         ${optionsHtml}
@@ -297,6 +351,7 @@ function renderSubcategoryPage(
         </div>
         <div class="card-actions justify-center mt-3">
           <button class="btn btn-primary btn-sm answer-toggle" data-target="answer-${i}">Show Answer</button>
+          <button class="btn btn-error btn-sm btn-outline mark-wrong-btn${isMarkedWrong ? " btn-disabled" : ""}" data-file="${escapeHtml(item.file)}">${isMarkedWrong ? "Reported" : "Report Wrong"}</button>
         </div>
       </div>
     </div>`;
@@ -320,6 +375,8 @@ function renderSubcategoryPage(
 
   const script = `<script>
 (function() {
+  var slug = ${JSON.stringify(tenant.slug)};
+
   // Answer toggle
   document.addEventListener('click', function(e) {
     var btn = e.target.closest('.answer-toggle');
@@ -329,6 +386,43 @@ function renderSubcategoryPage(
     var hidden = target.classList.contains('hidden');
     target.classList.toggle('hidden');
     btn.textContent = hidden ? 'Hide Answer' : 'Show Answer';
+  });
+
+  // Mark wrong
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.mark-wrong-btn');
+    if (!btn || btn.classList.contains('btn-disabled')) return;
+    var file = btn.dataset.file;
+    if (!file) return;
+    btn.classList.add('loading');
+    fetch('/' + encodeURIComponent(slug) + '/mark-wrong', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: file })
+    }).then(function(res) {
+      btn.classList.remove('loading');
+      if (res.ok) {
+        btn.textContent = 'Reported';
+        btn.classList.add('btn-disabled');
+        btn.classList.remove('btn-outline');
+        var card = btn.closest('.question-card');
+        if (card) card.classList.add('border', 'border-error/30');
+        var badges = card.querySelector('.flex.items-center.gap-2');
+        if (badges) {
+          var badge = document.createElement('span');
+          badge.className = 'badge badge-error badge-sm';
+          badge.textContent = 'Reported';
+          badges.appendChild(badge);
+        }
+      } else {
+        btn.textContent = 'Error';
+        setTimeout(function() { btn.textContent = 'Report Wrong'; }, 2000);
+      }
+    }).catch(function() {
+      btn.classList.remove('loading');
+      btn.textContent = 'Error';
+      setTimeout(function() { btn.textContent = 'Report Wrong'; }, 2000);
+    });
   });
 
   // Search with debounce
@@ -623,12 +717,23 @@ export async function publicRoutes(app: FastifyInstance) {
         const categoryName = category?.name || splitData.category_name || categoryKey;
         const subcategoryName = splitData.subcategory_name || subcategoryKey;
 
+        // Fetch which question files in this tenant are already marked wrong
+        const allFiles: string[] = (splitData.groups || []).flat().map((q) => q.file);
+        const markedWrongQuestions = allFiles.length > 0
+          ? await db.question.findMany({
+              where: { tenantId: tenant.id, file: { in: allFiles }, markedWrong: true },
+              select: { file: true },
+            })
+          : [];
+        const markedWrongFiles = new Set<string>(markedWrongQuestions.map((q) => q.file));
+
         const html = renderSubcategoryPage(
           { name: tenant.name, slug: tenant.slug },
           categoryName,
           categoryKey,
           subcategoryName,
           splitData.groups || [],
+          markedWrongFiles,
         );
 
         await setCached(cacheKey, html, cacheTtl);
@@ -637,4 +742,52 @@ export async function publicRoutes(app: FastifyInstance) {
       },
     },
   );
+
+  // POST /:slug/mark-wrong — guest marks a question as wrong (no auth)
+  app.post<{ Params: { slug: string }; Body: { file: string } }>("/:slug/mark-wrong", {
+    handler: async (request, reply) => {
+      const { slug } = request.params;
+      const { file } = request.body ?? {};
+
+      if (!file || typeof file !== "string") {
+        return reply.code(400).send({ error: "file is required" });
+      }
+
+      const db = getDb();
+      const tenant = await db.tenant.findUnique({
+        where: { slug },
+        select: { id: true, isActive: true },
+      });
+
+      if (!tenant || !tenant.isActive) {
+        return reply.code(404).send({ error: "Not found" });
+      }
+
+      const question = await db.question.findUnique({
+        where: { tenantId_file: { tenantId: tenant.id, file } },
+      });
+
+      if (!question) {
+        return reply.code(404).send({ error: "Question not found" });
+      }
+
+      if (!question.markedWrong) {
+        await db.question.update({
+          where: { id: question.id },
+          data: { markedWrong: true, markedWrongAt: new Date() },
+        });
+
+        // Invalidate cached pages for this tenant so the badge shows up
+        try {
+          const cache = getCacheClient();
+          const keys = await cache.keys(`public:questions:${slug}:*`);
+          if (keys.length > 0) await cache.del(...keys);
+        } catch {
+          // cache invalidation failure is non-critical
+        }
+      }
+
+      return reply.code(200).send({ ok: true });
+    },
+  });
 }

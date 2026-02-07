@@ -78,12 +78,15 @@ model Question {
   data              Json?        // ParsedQuestion: question_number, points, text, type, answer, options
   categorization    Json?        // { success, category, subcategory?, reasoning }
   similarityGroupId String?
+  markedWrong       Boolean      @default(false)
+  markedWrongAt     DateTime?
 
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
   @@unique([tenantId, file])
   @@index([tenantId, similarityGroupId])
+  @@index([tenantId, markedWrong])
   @@map("questions")
 }
 

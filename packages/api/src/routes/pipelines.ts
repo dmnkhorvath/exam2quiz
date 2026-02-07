@@ -363,17 +363,19 @@ export async function pipelineRoutes(app: FastifyInstance) {
 
   // GET /api/pipelines — list pipeline runs for current tenant
   app.get<{
-    Querystring: { status?: string; limit?: number; offset?: number };
+    Querystring: { status?: string; limit?: number; offset?: number; tenantId?: string };
   }>("/api/pipelines", {
     preHandler: [app.authenticate],
     handler: async (request) => {
       const db = getDb();
       const { role, tenantId } = request.user;
-      const { status, limit = 20, offset = 0 } = request.query;
+      const { status, limit = 20, offset = 0, tenantId: filterTenantId } = request.query;
 
       const where: Record<string, unknown> = {};
       if (role !== "SUPER_ADMIN") {
         where.tenantId = tenantId;
+      } else if (filterTenantId) {
+        where.tenantId = filterTenantId;
       }
       if (status) {
         where.status = status.toUpperCase();
@@ -540,6 +542,252 @@ export async function pipelineRoutes(app: FastifyInstance) {
       await rm(uploadDir, { recursive: true, force: true });
 
       return reply.code(204).send();
+    },
+  });
+
+  // POST /api/pipelines/:id/restart — restart pipeline from scratch, clearing all data except uploaded documents
+  app.post<{ Params: { id: string } }>("/api/pipelines/:id/restart", {
+    preHandler: [app.authenticate],
+    handler: async (request, reply) => {
+      const db = getDb();
+      const config = getConfig();
+      const { role, tenantId } = request.user;
+
+      const run = await db.pipelineRun.findUnique({
+        where: { id: request.params.id },
+        include: { childRuns: true },
+      });
+      if (!run) {
+        return reply.code(404).send({ error: "Pipeline run not found" });
+      }
+
+      if (role !== "SUPER_ADMIN" && run.tenantId !== tenantId) {
+        return reply.code(404).send({ error: "Pipeline run not found" });
+      }
+
+      // Only allow restarting terminal-state pipelines
+      const restartableStatuses = ["COMPLETED", "FAILED", "CANCELLED"];
+      if (!restartableStatuses.includes(run.status)) {
+        return reply.code(400).send({
+          error: `Cannot restart a ${run.status.toLowerCase()} pipeline. Only completed, failed, or cancelled pipelines can be restarted.`,
+        });
+      }
+
+      // Cannot restart batch children directly — restart the parent instead
+      if (run.parentRunId) {
+        return reply.code(400).send({
+          error: "Cannot restart a batch child run. Restart the parent batch pipeline instead.",
+        });
+      }
+
+      const isBatchParent = run.childRuns.length > 0;
+
+      // Delete questions created by this pipeline run (and child runs)
+      const runIds = [run.id, ...run.childRuns.map((c) => c.id)];
+      await db.question.deleteMany({
+        where: { pipelineRunId: { in: runIds } },
+      });
+
+      // Delete all pipeline jobs for this run and child runs
+      await db.pipelineJob.deleteMany({
+        where: { pipelineRunId: { in: runIds } },
+      });
+
+      // Remove output files for this run and child runs
+      for (const rid of runIds) {
+        const outputDir = join(config.OUTPUT_DIR, run.tenantId, rid);
+        await rm(outputDir, { recursive: true, force: true });
+      }
+
+      // For batch parents: delete child runs, then recreate the batch structure
+      if (isBatchParent) {
+        // Delete child runs from DB
+        await db.pipelineRun.deleteMany({
+          where: { parentRunId: run.id },
+        });
+
+        // Remove child upload dirs (they have copies of PDFs)
+        for (const child of run.childRuns) {
+          const childUploadDir = join(config.UPLOAD_DIR, run.tenantId, child.id);
+          await rm(childUploadDir, { recursive: true, force: true });
+        }
+
+        // Reconstruct batch: read files from the parent upload dir
+        const uploadDir = join(config.UPLOAD_DIR, run.tenantId, run.id);
+        const allFilenames = (run.filenames as string[]) ?? [];
+        const allPdfPaths = allFilenames.map((f) => join(uploadDir, f));
+        const batchSize = run.batchSize ?? BATCH_DEFAULTS.BATCH_SIZE;
+
+        const chunks: { filenames: string[]; pdfPaths: string[] }[] = [];
+        for (let i = 0; i < allPdfPaths.length; i += batchSize) {
+          chunks.push({
+            filenames: allFilenames.slice(i, i + batchSize),
+            pdfPaths: allPdfPaths.slice(i, i + batchSize),
+          });
+        }
+        const totalBatches = chunks.length;
+
+        // Reset parent run
+        await db.pipelineRun.update({
+          where: { id: run.id },
+          data: {
+            status: "QUEUED",
+            currentStage: PipelineStage.BATCH_COORDINATE,
+            processedPdfs: 0,
+            totalQuestions: 0,
+            errorMessage: null,
+            startedAt: null,
+            completedAt: null,
+            batchSize,
+            totalBatches,
+          },
+        });
+
+        // Create parent output dir
+        const parentOutputDir = join(config.OUTPUT_DIR, run.tenantId, run.id);
+        await mkdir(parentOutputDir, { recursive: true });
+
+        // Recreate child runs
+        const childRunIds: string[] = [];
+        for (let idx = 0; idx < chunks.length; idx++) {
+          const chunk = chunks[idx];
+
+          const childRun = await db.pipelineRun.create({
+            data: {
+              tenantId: run.tenantId,
+              status: "QUEUED",
+              filenames: chunk.filenames,
+              sourceUrls: [],
+              currentStage: PipelineStage.PDF_EXTRACT,
+              totalPdfs: chunk.filenames.length,
+              parentRunId: run.id,
+              batchIndex: idx,
+              batchSize,
+              totalBatches,
+            },
+          });
+          childRunIds.push(childRun.id);
+
+          // Create child upload dir and copy PDFs
+          const childUploadDir = join(config.UPLOAD_DIR, run.tenantId, childRun.id);
+          await mkdir(childUploadDir, { recursive: true });
+          const childPdfPaths: string[] = [];
+          for (let j = 0; j < chunk.pdfPaths.length; j++) {
+            const dest = join(childUploadDir, chunk.filenames[j]);
+            await copyFile(chunk.pdfPaths[j], dest);
+            childPdfPaths.push(dest);
+          }
+
+          // Create child output dir
+          const childOutputDir = join(config.OUTPUT_DIR, run.tenantId, childRun.id);
+          await mkdir(childOutputDir, { recursive: true });
+
+          // Create PipelineJob + enqueue pdf-extract
+          const childJob = await db.pipelineJob.create({
+            data: {
+              pipelineRunId: childRun.id,
+              stage: PipelineStage.PDF_EXTRACT,
+              status: "PENDING",
+            },
+          });
+
+          const childBullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
+            tenantId: run.tenantId,
+            pipelineRunId: childRun.id,
+            pdfPaths: childPdfPaths,
+            outputDir: childOutputDir,
+          });
+
+          await db.pipelineJob.update({
+            where: { id: childJob.id },
+            data: { bullmqJobId: childBullmqJobId },
+          });
+        }
+
+        // Create batch-coordinate job on the parent
+        const coordinatorJob = await db.pipelineJob.create({
+          data: {
+            pipelineRunId: run.id,
+            stage: PipelineStage.BATCH_COORDINATE,
+            status: "PENDING",
+          },
+        });
+
+        const coordinatorBullmqJobId = await addJob(PipelineStage.BATCH_COORDINATE, {
+          tenantId: run.tenantId,
+          parentPipelineRunId: run.id,
+          childPipelineRunIds: childRunIds,
+        });
+
+        await db.pipelineJob.update({
+          where: { id: coordinatorJob.id },
+          data: { bullmqJobId: coordinatorBullmqJobId },
+        });
+
+        pipelinesStartedTotal.inc({ tenant_id: run.tenantId });
+
+        return reply.code(200).send({
+          id: run.id,
+          status: "QUEUED",
+          currentStage: PipelineStage.BATCH_COORDINATE,
+          totalBatches,
+          childRunIds,
+        });
+      }
+
+      // Standard (non-batch) restart
+      // Reset run
+      await db.pipelineRun.update({
+        where: { id: run.id },
+        data: {
+          status: "QUEUED",
+          currentStage: PipelineStage.PDF_EXTRACT,
+          processedPdfs: 0,
+          totalQuestions: 0,
+          errorMessage: null,
+          startedAt: null,
+          completedAt: null,
+        },
+      });
+
+      // Create output directory
+      const outputDir = join(config.OUTPUT_DIR, run.tenantId, run.id);
+      await mkdir(outputDir, { recursive: true });
+
+      // Re-enqueue pdf-extract
+      const uploadDir = join(config.UPLOAD_DIR, run.tenantId, run.id);
+      const allFilenames = (run.filenames as string[]) ?? [];
+      const allPdfPaths = allFilenames.map((f) => join(uploadDir, f));
+
+      const job = await db.pipelineJob.create({
+        data: {
+          pipelineRunId: run.id,
+          stage: PipelineStage.PDF_EXTRACT,
+          status: "PENDING",
+        },
+      });
+
+      const bullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
+        tenantId: run.tenantId,
+        pipelineRunId: run.id,
+        pdfPaths: allPdfPaths,
+        outputDir,
+      });
+
+      await db.pipelineJob.update({
+        where: { id: job.id },
+        data: { bullmqJobId },
+      });
+
+      pipelinesStartedTotal.inc({ tenant_id: run.tenantId });
+
+      return reply.code(200).send({
+        id: run.id,
+        status: "QUEUED",
+        currentStage: PipelineStage.PDF_EXTRACT,
+        totalPdfs: allPdfPaths.length,
+        filenames: allFilenames,
+      });
     },
   });
 
