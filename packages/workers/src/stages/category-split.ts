@@ -76,6 +76,7 @@ interface SimilarityOutputEntry {
   categorization?: {
     success: boolean;
     category?: string;
+    subcategory?: string;
     reasoning?: string;
   };
   similarity_group_id?: string | null;
@@ -108,8 +109,8 @@ async function processCategorySplit(
 
     await job.updateProgress(10);
 
-    // Group by category
-    const categories = new Map<string, SimilarityOutputEntry[]>();
+    // Group by subcategory (preferred) or category
+    const splitGroups = new Map<string, { category: string; subcategory?: string; items: SimilarityOutputEntry[] }>();
     let skipped = 0;
 
     for (const item of data) {
@@ -119,15 +120,18 @@ async function processCategorySplit(
         continue;
       }
 
-      const existing = categories.get(category);
+      const subcategory = item.categorization?.subcategory;
+      const groupKey = subcategory || category;
+
+      const existing = splitGroups.get(groupKey);
       if (existing) {
-        existing.push(item);
+        existing.items.push(item);
       } else {
-        categories.set(category, [item]);
+        splitGroups.set(groupKey, { category, subcategory, items: [item] });
       }
     }
 
-    logStageEvent("category-split", "info", "categories_grouped", `${categories.size} categories, ${skipped} skipped`, { categoryCount: categories.size, skippedCount: skipped });
+    logStageEvent("category-split", "info", "categories_grouped", `${splitGroups.size} groups, ${skipped} skipped`, { categoryCount: splitGroups.size, skippedCount: skipped });
     if (skipped > 0) {
       logStageEvent("category-split", "warn", "questions_without_category", `${skipped} questions had no category`, { skippedCount: skipped });
     }
@@ -137,20 +141,21 @@ async function processCategorySplit(
     // Create output directory
     await mkdir(outputDir, { recursive: true });
 
-    // Write separate file per category
-    const sortedCategories = [...categories.entries()].sort(
-      (a, b) => b[1].length - a[1].length,
+    // Write separate file per group (subcategory or category)
+    const sortedCategories = [...splitGroups.entries()].sort(
+      (a, b) => b[1].items.length - a[1].items.length,
     );
 
     let written = 0;
-    for (const [categoryName, items] of sortedCategories) {
-      const filename = `${sanitizeFilename(categoryName)}.json`;
+    for (const [groupName, { category: categoryName, subcategory, items }] of sortedCategories) {
+      const filename = `${sanitizeFilename(groupName)}.json`;
       const outputPath = path.join(outputDir, filename);
 
       const grouped = groupBySimilarity(items);
 
       const outputData = {
         category_name: categoryName,
+        ...(subcategory ? { subcategory_name: subcategory } : {}),
         groups: grouped,
       };
 
@@ -168,7 +173,7 @@ async function processCategorySplit(
         data: { progress },
       });
 
-      logStageEvent("category-split", "info", "category_written", `${categoryName}: ${items.length} questions, ${grouped.length} groups`, { category: categoryName, questionCount: items.length, groupCount: grouped.length });
+      logStageEvent("category-split", "info", "category_written", `${groupName}: ${items.length} questions, ${grouped.length} groups`, { category: categoryName, subcategory, questionCount: items.length, groupCount: grouped.length });
     }
 
     await job.updateProgress(95);

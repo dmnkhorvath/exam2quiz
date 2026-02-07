@@ -68,12 +68,14 @@ def prepare_e5_text(text: str) -> str:
 
 
 def group_by_category(questions: list[dict]) -> dict[str, list[tuple[int, dict]]]:
-    """Group questions by their category, keeping track of original indices."""
+    """Group questions by their subcategory (preferred) or category, keeping track of original indices."""
     groups = defaultdict(list)
     for idx, q in enumerate(questions):
         cat = q.get("categorization", {})
         if cat.get("success") and cat.get("category"):
-            groups[cat["category"]].append((idx, q))
+            # Use subcategory for grouping when available, fall back to category
+            group_key = cat.get("subcategory") or cat["category"]
+            groups[group_key].append((idx, q))
     return groups
 
 

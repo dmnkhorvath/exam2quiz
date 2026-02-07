@@ -32,7 +32,7 @@ export async function categoryRoutes(app: FastifyInstance) {
 
   // POST /api/categories
   app.post<{
-    Body: { key: string; name: string; file: string; sortOrder?: number; tenantId?: string };
+    Body: { key: string; name: string; subcategory?: string; file: string; sortOrder?: number; tenantId?: string };
   }>("/api/categories", {
     preHandler: [app.requireRole("SUPER_ADMIN", "TENANT_ADMIN", "TENANT_USER")],
     schema: {
@@ -42,6 +42,7 @@ export async function categoryRoutes(app: FastifyInstance) {
         properties: {
           key: { type: "string", minLength: 1 },
           name: { type: "string", minLength: 1 },
+          subcategory: { type: "string" },
           file: { type: "string", minLength: 1 },
           sortOrder: { type: "number" },
           tenantId: { type: "string" },
@@ -51,7 +52,7 @@ export async function categoryRoutes(app: FastifyInstance) {
     handler: async (request, reply) => {
       const db = getDb();
       const { role, tenantId: userTenantId } = request.user;
-      const { key, name, file, sortOrder, tenantId: bodyTenantId } = request.body;
+      const { key, name, subcategory, file, sortOrder, tenantId: bodyTenantId } = request.body;
 
       // SUPER_ADMIN can specify a target tenant; others use their own
       const targetTenantId = role === "SUPER_ADMIN"
@@ -70,7 +71,14 @@ export async function categoryRoutes(app: FastifyInstance) {
       }
 
       const category = await db.tenantCategory.create({
-        data: { tenantId: targetTenantId, key, name, file, sortOrder: sortOrder ?? 0 },
+        data: {
+          tenantId: targetTenantId,
+          key,
+          name,
+          subcategory: subcategory || null,
+          file,
+          sortOrder: sortOrder ?? 0,
+        },
       });
       return reply.code(201).send(category);
     },
@@ -79,7 +87,7 @@ export async function categoryRoutes(app: FastifyInstance) {
   // PUT /api/categories/:id
   app.put<{
     Params: { id: string };
-    Body: { key?: string; name?: string; file?: string; sortOrder?: number };
+    Body: { key?: string; name?: string; subcategory?: string | null; file?: string; sortOrder?: number };
   }>("/api/categories/:id", {
     preHandler: [app.requireRole("SUPER_ADMIN", "TENANT_ADMIN", "TENANT_USER")],
     schema: {
@@ -88,6 +96,7 @@ export async function categoryRoutes(app: FastifyInstance) {
         properties: {
           key: { type: "string", minLength: 1 },
           name: { type: "string", minLength: 1 },
+          subcategory: { type: ["string", "null"] },
           file: { type: "string", minLength: 1 },
           sortOrder: { type: "number" },
         },

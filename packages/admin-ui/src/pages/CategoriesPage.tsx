@@ -73,6 +73,7 @@ export default function CategoriesPage() {
                 <th>Order</th>
                 <th>Key</th>
                 <th>Name</th>
+                <th>Subcategory</th>
                 <th>File</th>
                 <th>Actions</th>
               </tr>
@@ -85,6 +86,7 @@ export default function CategoriesPage() {
                     <td>{c.sortOrder}</td>
                     <td className="font-mono text-xs">{c.key}</td>
                     <td className="font-medium">{c.name}</td>
+                    <td className="text-sm">{c.subcategory ?? <span className="text-base-content/40">—</span>}</td>
                     <td className="font-mono text-xs">{c.file}</td>
                     <td className="space-x-1">
                       <button
@@ -110,7 +112,7 @@ export default function CategoriesPage() {
                 ))}
               {categories?.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center text-base-content/60 py-8">
+                  <td colSpan={6} className="text-center text-base-content/60 py-8">
                     No categories configured
                   </td>
                 </tr>
@@ -147,16 +149,22 @@ function CategoryForm({
   const [form, setForm] = useState({
     key: category?.key ?? "",
     name: category?.name ?? "",
+    subcategory: category?.subcategory ?? "",
     file: category?.file ?? "",
     sortOrder: category?.sortOrder ?? 0,
   });
   const [error, setError] = useState("");
 
   const mutation = useMutation({
-    mutationFn: () =>
-      category
-        ? categoriesApi.update(category.id, form)
-        : categoriesApi.create({ ...form, tenantId }),
+    mutationFn: () => {
+      const payload = {
+        ...form,
+        subcategory: form.subcategory || undefined,
+      };
+      return category
+        ? categoriesApi.update(category.id, { ...payload, subcategory: form.subcategory || null })
+        : categoriesApi.create({ ...payload, tenantId });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["categories"] });
       onClose();
@@ -198,6 +206,16 @@ function CategoryForm({
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
               placeholder="e.g. Anatomy"
+            />
+          </div>
+
+          <div className="form-control">
+            <label className="label"><span className="label-text">Subcategory</span></label>
+            <input
+              className="input input-bordered w-full"
+              value={form.subcategory}
+              onChange={(e) => setForm({ ...form, subcategory: e.target.value })}
+              placeholder="e.g. Musculoskeletal (optional)"
             />
           </div>
 

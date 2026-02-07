@@ -51,14 +51,15 @@ model User {
 
 // ─── Tenant Categories ─────────────────────────────────────────────
 model TenantCategory {
-  id        String   @id @default(cuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  key       String
-  name      String
-  file      String
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key         String
+  name        String
+  subcategory String?
+  file        String
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
 
   @@unique([tenantId, key])
   @@map("tenant_categories")
@@ -75,7 +76,7 @@ model Question {
   sourcePdf         String?      // source PDF stem
   success           Boolean      @default(true)
   data              Json?        // ParsedQuestion: question_number, points, text, type, answer, options
-  categorization    Json?        // { success, category, reasoning }
+  categorization    Json?        // { success, category, subcategory?, reasoning }
   similarityGroupId String?
 
   createdAt         DateTime     @default(now())

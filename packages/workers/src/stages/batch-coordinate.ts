@@ -29,6 +29,7 @@ interface CategorizedQuestionEntry {
   categorization: {
     success: boolean;
     category?: string;
+    subcategory?: string;
     reasoning?: string;
     error?: string;
   };

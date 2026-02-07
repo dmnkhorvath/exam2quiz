@@ -50,6 +50,7 @@ interface CategorizedQuestionEntry extends ParsedQuestionEntry {
   categorization: {
     success: boolean;
     category?: string;
+    subcategory?: string;
     reasoning?: string;
     error?: string;
   };
@@ -69,6 +70,35 @@ function isRateLimitError(err: unknown): boolean {
 
 // ─── Build system prompt from categories ──────────────────────────
 function buildSystemPrompt(categories: Category[]): string {
+  const hasSubcategories = categories.some((c) => c.subcategory);
+
+  if (hasSubcategories) {
+    // Group categories by name, list subcategories under each
+    const grouped = new Map<string, string[]>();
+    for (const c of categories) {
+      const subs = grouped.get(c.name) ?? [];
+      if (c.subcategory) subs.push(c.subcategory);
+      grouped.set(c.name, subs);
+    }
+
+    const categoryList = [...grouped.entries()]
+      .map(([name, subs], i) => {
+        const subList = subs.map((s) => `   - ${s}`).join("\n");
+        return `${i + 1}. ${name}\n${subList}`;
+      })
+      .join("\n");
+
+    return `You are a medical exam question categorizer. Your task is to categorize Hungarian medical exam questions into a category and subcategory from the following list:
+
+${categoryList}
+
+Rules:
+- Choose the SINGLE most appropriate category AND subcategory based on the question content
+- Return the category name AND subcategory name exactly as written above
+- If a question spans multiple topics, choose the PRIMARY topic
+- Consider both the question text and the correct answer when categorizing`;
+  }
+
   const categoryList = categories
     .map((c, i) => `${i + 1}. ${c.name}`)
     .join("\n");
@@ -86,19 +116,37 @@ Rules:
 
 // ─── Build response schema from categories ────────────────────────
 function buildResponseSchema(categories: Category[]) {
+  const hasSubcategories = categories.some((c) => c.subcategory);
+  const uniqueNames = [...new Set(categories.map((c) => c.name))];
+
+  const properties: Record<string, { type: SchemaType; enum?: string[]; description?: string }> = {
+    category: {
+      type: SchemaType.STRING,
+      enum: uniqueNames as string[],
+    },
+    reasoning: {
+      type: SchemaType.STRING,
+      description: "Brief explanation for the categorization",
+    },
+  };
+
+  const required = ["category", "reasoning"];
+
+  if (hasSubcategories) {
+    const uniqueSubcategories = [...new Set(
+      categories.filter((c) => c.subcategory).map((c) => c.subcategory as string),
+    )];
+    properties.subcategory = {
+      type: SchemaType.STRING,
+      enum: uniqueSubcategories as string[],
+    };
+    required.push("subcategory");
+  }
+
   return {
     type: SchemaType.OBJECT,
-    properties: {
-      category: {
-        type: SchemaType.STRING,
-        enum: categories.map((c) => c.name) as string[],
-      },
-      reasoning: {
-        type: SchemaType.STRING,
-        description: "Brief explanation for the categorization",
-      },
-    },
-    required: ["category", "reasoning"],
+    properties,
+    required,
   };
 }
 
@@ -160,7 +208,7 @@ Correct Answer: ${data.correct_answer}`;
       const parsed = JSON.parse(responseText);
 
       // Validate category is in the allowed list
-      const categoryNames = categories.map((c) => c.name);
+      const categoryNames = [...new Set(categories.map((c) => c.name))];
       let category = parsed.category as string | undefined;
       if (!category) {
         logStageEvent("categorize", "warn", "missing_category", "Gemini returned no category field", { file: question.file });
@@ -181,6 +229,23 @@ Correct Answer: ${data.correct_answer}`;
         if (match) category = match;
       }
 
+      // Validate subcategory if present
+      const hasSubcategories = categories.some((c) => c.subcategory);
+      let subcategory = parsed.subcategory as string | undefined;
+      if (hasSubcategories && subcategory) {
+        const validSubcategories = categories
+          .filter((c) => c.name === category && c.subcategory)
+          .map((c) => c.subcategory as string);
+        if (!validSubcategories.includes(subcategory)) {
+          const match = validSubcategories.find(
+            (s) =>
+              s.toLowerCase().includes(subcategory!.toLowerCase()) ||
+              subcategory!.toLowerCase().includes(s.toLowerCase()),
+          );
+          if (match) subcategory = match;
+        }
+      }
+
       trackGeminiCall("categorize", "success");
       trackQuestionProcessed("categorize", true);
       trackCategoryQuestion(category);
@@ -189,6 +254,7 @@ Correct Answer: ${data.correct_answer}`;
         categorization: {
           success: true,
           category,
+          ...(subcategory ? { subcategory } : {}),
           reasoning: parsed.reasoning ?? "",
         },
       };
@@ -340,6 +406,7 @@ async function processCategorize(
     const categories: Category[] = tenantCategories.map((tc) => ({
       key: tc.key,
       name: tc.name,
+      subcategory: tc.subcategory ?? undefined,
       file: tc.file,
     }));
 

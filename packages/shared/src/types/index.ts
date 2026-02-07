@@ -57,6 +57,7 @@ export type ParsedQuestion = z.infer<typeof ParsedQuestionSchema>;
 export const CategorySchema = z.object({
   key: z.string(),
   name: z.string(),
+  subcategory: z.string().optional(),
   file: z.string(),
 });
 
@@ -66,6 +67,7 @@ export type Category = z.infer<typeof CategorySchema>;
 export const CategorizationSchema = z.object({
   success: z.boolean(),
   category: z.string(),
+  subcategory: z.string().optional(),
   reasoning: z.string(),
 });
 

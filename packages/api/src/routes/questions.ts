@@ -7,6 +7,7 @@ export async function questionRoutes(app: FastifyInstance) {
     Querystring: {
       pipelineRunId?: string;
       category?: string;
+      subcategory?: string;
       page?: string;
       limit?: string;
     };
@@ -18,6 +19,7 @@ export async function questionRoutes(app: FastifyInstance) {
         properties: {
           pipelineRunId: { type: "string" },
           category: { type: "string" },
+          subcategory: { type: "string" },
           page: { type: "string" },
           limit: { type: "string" },
         },
@@ -26,7 +28,7 @@ export async function questionRoutes(app: FastifyInstance) {
     handler: async (request, reply) => {
       const db = getDb();
       const { role, tenantId } = request.user;
-      const { pipelineRunId, category, page, limit } = request.query;
+      const { pipelineRunId, category, subcategory, page, limit } = request.query;
 
       if (!tenantId && role !== "SUPER_ADMIN") {
         return reply.code(400).send({ error: "User must belong to a tenant" });
@@ -48,8 +50,10 @@ export async function questionRoutes(app: FastifyInstance) {
         where.pipelineRunId = pipelineRunId;
       }
 
-      // Filter by category (stored in categorization JSON)
-      if (category) {
+      // Filter by category or subcategory (stored in categorization JSON)
+      if (subcategory) {
+        where.categorization = { path: ["subcategory"], equals: subcategory };
+      } else if (category) {
         where.categorization = { path: ["category"], equals: category };
       }
 

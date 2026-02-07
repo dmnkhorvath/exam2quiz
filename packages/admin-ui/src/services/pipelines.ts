@@ -74,5 +74,5 @@ export const pipelinesApi = {
     api.get<{ files: string[] }>(`/pipelines/${id}/splits`),
 
   getSplit: (id: string, filename: string) =>
-    api.get<{ category_name: string; groups: unknown[][] }>(`/pipelines/${id}/splits/${filename}`),
+    api.get<{ category_name: string; subcategory_name?: string; groups: unknown[][] }>(`/pipelines/${id}/splits/${filename}`),
 };
