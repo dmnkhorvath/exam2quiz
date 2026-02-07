@@ -1,5 +1,5 @@
 {
-  "pid": 1250,
-  "started": "2026-02-06T21:14:32.967966Z",
-  "prompt": "Recreate find_similar_questions.py script as a new worker to substitute current similarity worker"
+  "pid": 46398,
+  "started": "2026-02-07T09:31:56.673280Z",
+  "prompt": "i want to have a single set of questions per tenant, each tenant pipelline must merge its content ot..."
 }
