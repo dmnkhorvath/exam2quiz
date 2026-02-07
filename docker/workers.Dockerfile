@@ -29,13 +29,16 @@ COPY --from=builder /app/packages/workers/dist packages/workers/dist/
 COPY --from=builder /app/config config/
 COPY --from=builder /app/node_modules node_modules/
 
-# Install Python + uv for the similarity worker subprocess
-RUN apt-get update -y && apt-get install -y openssl python3 curl && rm -rf /var/lib/apt/lists/* \
+# Install Python + uv + build tools for the similarity worker subprocess
+RUN apt-get update -y \
+    && apt-get install -y openssl python3 python3-dev build-essential curl \
+    && rm -rf /var/lib/apt/lists/* \
     && curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Copy Python scripts used by the similarity worker
+# Copy Python scripts and pre-install dependencies at build time
 COPY scripts/ scripts/
+RUN uv run --script scripts/find_similar_questions.py --help
 
 RUN mkdir -p /data/uploads /data/output
 
