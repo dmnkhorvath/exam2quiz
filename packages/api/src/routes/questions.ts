@@ -457,6 +457,45 @@ export async function questionRoutes(app: FastifyInstance) {
     },
   });
 
+  // GET /api/questions/:id/image — serve the question's source image
+  // Accepts token via Authorization header or ?token= query param (for <img> tags)
+  app.get<{ Params: { id: string }; Querystring: { token?: string } }>("/api/questions/:id/image", {
+    schema: { querystring: { type: "object", properties: { token: { type: "string" } } } },
+    preHandler: [async (request, reply) => {
+      if (!request.headers.authorization && request.query.token) {
+        request.headers.authorization = `Bearer ${request.query.token}`;
+      }
+      return app.authenticate(request, reply);
+    }],
+    handler: async (request, reply) => {
+      const db = getDb();
+      const config = getConfig();
+      const { role, tenantId } = request.user;
+
+      const question = await db.question.findUnique({ where: { id: request.params.id } });
+      if (!question) return reply.code(404).send({ error: "Question not found" });
+      if (role !== "SUPER_ADMIN" && question.tenantId !== tenantId) {
+        return reply.code(404).send({ error: "Question not found" });
+      }
+
+      if (!question.pipelineRunId || !question.sourcePdf) {
+        return reply.code(400).send({ error: "Question has no associated pipeline run or source PDF" });
+      }
+
+      const imagePath = join(config.OUTPUT_DIR, question.tenantId, question.pipelineRunId, question.sourcePdf, question.file);
+      let imageData: Buffer;
+      try {
+        imageData = await readFile(imagePath);
+      } catch {
+        return reply.code(404).send({ error: "Image file not found on disk" });
+      }
+
+      const ext = question.file.toLowerCase();
+      const mime = ext.endsWith(".png") ? "image/png" : ext.endsWith(".jpg") || ext.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream";
+      return reply.header("Content-Type", mime).header("Cache-Control", "private, max-age=3600").send(imageData);
+    },
+  });
+
   // POST /api/questions/:id/resolve — remove wrong marker
   app.post<{ Params: { id: string } }>("/api/questions/:id/resolve", {
     preHandler: [app.authenticate],
