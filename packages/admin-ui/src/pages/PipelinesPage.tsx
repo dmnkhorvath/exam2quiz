@@ -1,22 +1,35 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { pipelinesApi, type BatchChildRun } from "../services/pipelines";
+import { tenantsApi } from "../services/tenants";
+import { useAuth } from "../hooks/useAuth";
 
 export default function PipelinesPage() {
   const qc = useQueryClient();
+  const { isSuperAdmin, user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState("");
   const [detail, setDetail] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [urls, setUrls] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedTenantId, setSelectedTenantId] = useState<string>(user?.tenantId ?? "");
+
+  const { data: tenants } = useQuery({
+    queryKey: ["tenants"],
+    queryFn: () => tenantsApi.list(),
+    enabled: isSuperAdmin,
+  });
+
+  const effectiveTenantId = selectedTenantId || (isSuperAdmin ? tenants?.[0]?.id : user?.tenantId) || "";
 
   const { data, isLoading } = useQuery({
-    queryKey: ["pipelines", filter],
+    queryKey: ["pipelines", filter, effectiveTenantId],
     queryFn: () =>
       pipelinesApi.list({
         status: filter || undefined,
         limit: 50,
+        tenantId: isSuperAdmin ? effectiveTenantId || undefined : undefined,
       }),
     refetchInterval: 5000,
   });
@@ -59,6 +72,11 @@ export default function PipelinesPage() {
     },
   });
 
+  const restartMut = useMutation({
+    mutationFn: (id: string) => pipelinesApi.restart(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pipelines"] }),
+  });
+
   const runs = data?.data ?? [];
 
   const toggleSelect = (id: string) => {
@@ -73,6 +91,21 @@ export default function PipelinesPage() {
   return (
     <div className="p-6 space-y-4">
       <h1 className="text-2xl font-bold">Pipelines</h1>
+
+      {isSuperAdmin && tenants && tenants.length > 0 && (
+        <div className="form-control w-full max-w-xs">
+          <label className="label"><span className="label-text">Tenant</span></label>
+          <select
+            className="select select-bordered"
+            value={effectiveTenantId}
+            onChange={(e) => setSelectedTenantId(e.target.value)}
+          >
+            {tenants.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="bg-base-100 rounded-lg shadow p-4 space-y-3">
         <div className="flex gap-4 items-start">
@@ -134,6 +167,12 @@ export default function PipelinesPage() {
       {mergeMut.isError && (
         <div className="alert alert-error text-sm">
           Merge failed: {mergeMut.error.message}
+        </div>
+      )}
+
+      {restartMut.isError && (
+        <div className="alert alert-error text-sm">
+          Restart failed: {restartMut.error.message}
         </div>
       )}
 
@@ -274,6 +313,19 @@ export default function PipelinesPage() {
                         onClick={() => cancelMut.mutate(p.id)}
                       >
                         Cancel
+                      </button>
+                    )}
+                    {(p.status === "COMPLETED" || p.status === "FAILED" || p.status === "CANCELLED") && !p.parentRunId && (
+                      <button
+                        className="btn btn-ghost btn-xs text-info"
+                        disabled={restartMut.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Restart pipeline "${(p.filenames ?? []).join(", ") || p.id}"? All pipeline data (jobs, questions, output files) will be cleared. Original documents will be kept.`)) {
+                            restartMut.mutate(p.id);
+                          }
+                        }}
+                      >
+                        Restart
                       </button>
                     )}
                     {(p.status === "COMPLETED" || p.status === "FAILED" || p.status === "CANCELLED") && (

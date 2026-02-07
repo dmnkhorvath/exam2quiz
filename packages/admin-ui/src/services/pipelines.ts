@@ -44,11 +44,12 @@ interface PipelineListResponse {
 }
 
 export const pipelinesApi = {
-  list: (params?: { status?: string; limit?: number; offset?: number }) => {
+  list: (params?: { status?: string; limit?: number; offset?: number; tenantId?: string }) => {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.limit) query.set("limit", String(params.limit));
     if (params?.offset) query.set("offset", String(params.offset));
+    if (params?.tenantId) query.set("tenantId", params.tenantId);
     const qs = query.toString();
     return api.get<PipelineListResponse>(`/pipelines${qs ? `?${qs}` : ""}`);
   },
@@ -63,6 +64,8 @@ export const pipelinesApi = {
   },
 
   cancel: (id: string) => api.delete<void>(`/pipelines/${id}`),
+
+  restart: (id: string) => api.post<PipelineRun>(`/pipelines/${id}/restart`),
 
   deletePipeline: (id: string) =>
     api.delete<void>(`/pipelines/${id}/delete`),

@@ -15,6 +15,7 @@ export default function SettingsPage() {
   const [editing, setEditing] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [success, setSuccess] = useState("");
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "system");
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ["tenant-settings"],
@@ -33,6 +34,13 @@ export default function SettingsPage() {
     },
   });
 
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => { if (theme === "system") applyTheme("system"); };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [theme]);
+
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -40,15 +48,6 @@ export default function SettingsPage() {
       </div>
     );
   }
-
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "system");
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => { if (theme === "system") applyTheme("system"); };
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [theme]);
 
   return (
     <div className="p-6 max-w-2xl space-y-6">

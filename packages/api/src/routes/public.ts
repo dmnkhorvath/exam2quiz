@@ -80,6 +80,54 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
+/** Convert markdown text to safe HTML, rendering pipe tables as <table> elements */
+function markdownToHtml(raw: string): string {
+  const lines = raw.split("\n");
+  const out: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    // Detect markdown table: a row of |...|, followed by a separator |---|...|
+    if (
+      i + 1 < lines.length &&
+      lines[i].trim().startsWith("|") &&
+      lines[i].trim().endsWith("|") &&
+      /^\|[\s:-]+(\|[\s:-]+)+\|$/.test(lines[i + 1].trim())
+    ) {
+      // Parse header
+      const headerCells = lines[i].trim().slice(1, -1).split("|").map(c => c.trim());
+      i += 2; // skip header + separator
+
+      // Parse body rows
+      const bodyRows: string[][] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        bodyRows.push(lines[i].trim().slice(1, -1).split("|").map(c => c.trim()));
+        i++;
+      }
+
+      let table = `<table class="table table-zebra table-sm w-auto"><thead><tr>`;
+      for (const cell of headerCells) {
+        table += `<th>${escapeHtml(cell)}</th>`;
+      }
+      table += `</tr></thead><tbody>`;
+      for (const row of bodyRows) {
+        table += `<tr>`;
+        for (const cell of row) {
+          table += `<td>${escapeHtml(cell)}</td>`;
+        }
+        table += `</tr>`;
+      }
+      table += `</tbody></table>`;
+      out.push(table);
+    } else {
+      out.push(escapeHtml(lines[i]));
+      i++;
+    }
+  }
+
+  return out.join("<br>");
+}
+
 function htmlShell(title: string, body: string, extraHead = ""): string {
   return `<!DOCTYPE html>
 <html lang="hu">
@@ -259,8 +307,8 @@ function renderSubcategoryPage(
     const count = group.length;
     const qType = item.data?.question_type || "open";
     const points = item.data?.points;
-    const questionText = escapeHtml(item.data?.question_text || "").replace(/\n/g, "<br>");
-    const answerText = escapeHtml(item.data?.correct_answer || "").replace(/\n/g, "<br>");
+    const questionText = markdownToHtml(item.data?.question_text || "");
+    const answerText = markdownToHtml(item.data?.correct_answer || "");
 
     // Badge colors by type
     const typeBadge =
@@ -275,7 +323,7 @@ function renderSubcategoryPage(
     if (item.data?.options && item.data.options.length > 0) {
       optionsHtml = `<ul class="list-disc list-inside space-y-1 mt-3 text-sm">`;
       for (const opt of item.data.options) {
-        optionsHtml += `<li>${escapeHtml(opt)}</li>`;
+        optionsHtml += `<li>${markdownToHtml(opt)}</li>`;
       }
       optionsHtml += `</ul>`;
     }
