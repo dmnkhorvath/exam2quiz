@@ -50,9 +50,9 @@ export async function pipelineRoutes(app: FastifyInstance) {
         return reply.code(403).send({ error: "Tenant is inactive" });
       }
 
-      // Check concurrent pipeline limit
+      // Check concurrent pipeline limit (exclude batch children — they're internal)
       const activePipelines = await db.pipelineRun.count({
-        where: { tenantId, status: { in: ["QUEUED", "RUNNING"] } },
+        where: { tenantId, status: { in: ["QUEUED", "RUNNING"] }, parentRunId: null },
       });
       if (activePipelines >= tenant.maxConcurrentPipelines) {
         return reply.code(429).send({ error: "Maximum concurrent pipelines reached" });
