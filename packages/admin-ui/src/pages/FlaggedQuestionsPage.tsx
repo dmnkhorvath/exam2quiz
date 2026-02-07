@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
 import { questionsApi, type FlaggedQuestion } from "../services/questions";
+import { categoriesApi } from "../services/categories";
 import { tenantsApi } from "../services/tenants";
 import { getToken } from "../services/api";
 
@@ -55,6 +56,25 @@ export default function FlaggedQuestionsPage() {
       setEditingQuestion(null);
     },
   });
+
+  const categoriesQuery = useQuery({
+    queryKey: ["categories", editingQuestion?.tenantId],
+    queryFn: () => categoriesApi.list(editingQuestion!.tenantId),
+    enabled: !!editingQuestion,
+  });
+
+  const categoryNames = useMemo(() => {
+    if (!categoriesQuery.data) return [];
+    return [...new Set(categoriesQuery.data.map((c) => c.name))].sort();
+  }, [categoriesQuery.data]);
+
+  const subcategoryNames = useMemo(() => {
+    if (!categoriesQuery.data || !editForm.category) return [];
+    return categoriesQuery.data
+      .filter((c) => c.name === editForm.category && c.subcategory)
+      .map((c) => c.subcategory!)
+      .sort();
+  }, [categoriesQuery.data, editForm.category]);
 
   function openEditModal(q: FlaggedQuestion) {
     setEditingQuestion(q);
@@ -267,23 +287,32 @@ export default function FlaggedQuestionsPage() {
                 <label className="label">
                   <span className="label-text">Category</span>
                 </label>
-                <input
-                  type="text"
-                  className="input input-bordered input-sm"
+                <select
+                  className="select select-bordered select-sm"
                   value={editForm.category}
-                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                />
+                  onChange={(e) => setEditForm({ ...editForm, category: e.target.value, subcategory: "" })}
+                >
+                  <option value="">— Select category —</option>
+                  {categoryNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-control">
                 <label className="label">
                   <span className="label-text">Subcategory</span>
                 </label>
-                <input
-                  type="text"
-                  className="input input-bordered input-sm"
+                <select
+                  className="select select-bordered select-sm"
                   value={editForm.subcategory}
                   onChange={(e) => setEditForm({ ...editForm, subcategory: e.target.value })}
-                />
+                  disabled={subcategoryNames.length === 0}
+                >
+                  <option value="">{subcategoryNames.length === 0 ? "— No subcategories —" : "— Select subcategory —"}</option>
+                  {subcategoryNames.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
               </div>
             </div>
 

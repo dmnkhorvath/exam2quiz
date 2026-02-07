@@ -7,14 +7,6 @@
       "prompt": "on any tenant question related page where redis-cache for html is present show: cached since {date}",
       "worktree_path": "/Users/dominik.horvath/git/exams2quiz/.worktrees/brave-daisy",
       "workspace": "/Users/dominik.horvath/git/exams2quiz/.worktrees/brave-daisy"
-    },
-    {
-      "id": "sleek-sparrow",
-      "pid": 77408,
-      "started": "2026-02-07T18:46:17.279365Z",
-      "prompt": "add github actions that runs all existing tests in the repository i do not know the best practices f...",
-      "worktree_path": "/Users/dominik.horvath/git/exams2quiz/.worktrees/sleek-sparrow",
-      "workspace": "/Users/dominik.horvath/git/exams2quiz/.worktrees/sleek-sparrow"
     }
   ]
 }
