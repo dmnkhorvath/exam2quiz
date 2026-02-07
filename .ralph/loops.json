@@ -1,3 +1,20 @@
 {
-  "loops": []
+  "loops": [
+    {
+      "id": "keen-sage",
+      "pid": 4745,
+      "started": "2026-02-07T16:57:20.942994Z",
+      "prompt": "markdown tables are not rendered as html",
+      "worktree_path": "/Users/dominik.horvath/git/exams2quiz/.worktrees/keen-sage",
+      "workspace": "/Users/dominik.horvath/git/exams2quiz/.worktrees/keen-sage"
+    },
+    {
+      "id": "zesty-jay",
+      "pid": 15013,
+      "started": "2026-02-07T17:00:16.878074Z",
+      "prompt": "add tests for all the features implemented since today morning",
+      "worktree_path": "/Users/dominik.horvath/git/exams2quiz/.worktrees/zesty-jay",
+      "workspace": "/Users/dominik.horvath/git/exams2quiz/.worktrees/zesty-jay"
+    }
+  ]
 }
