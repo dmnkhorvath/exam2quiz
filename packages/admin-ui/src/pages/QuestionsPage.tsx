@@ -51,7 +51,7 @@ export default function QuestionsPage() {
           <option value="">Select a completed pipeline run...</option>
           {pipelines.map((p) => (
             <option key={p.id} value={p.id}>
-              {(p.filenames ?? []).join(", ") || p.id} — {new Date(p.createdAt).toLocaleDateString()}
+              [{p.id.slice(-8)}] {(p.filenames ?? []).slice(0, 3).join(", ")}{(p.filenames ?? []).length > 3 ? ` (+${(p.filenames ?? []).length - 3} more)` : ""} — {new Date(p.createdAt).toLocaleDateString()}
             </option>
           ))}
         </select>
@@ -94,9 +94,12 @@ export default function QuestionsPage() {
         <div className="space-y-4">
           <div className="flex items-center gap-4 text-sm text-base-content/60">
             <span>Category: {splitContent.category_name}</span>
+            {splitContent.subcategory_name && (
+              <span>Subcategory: {splitContent.subcategory_name}</span>
+            )}
             <span>Groups: {splitContent.groups.length}</span>
             <span>
-              Questions: {splitContent.groups.reduce((sum, g) => sum + g.length, 0)}
+              Questions: {splitContent.groups.reduce((sum: number, g: unknown[]) => sum + g.length, 0)}
             </span>
           </div>
 

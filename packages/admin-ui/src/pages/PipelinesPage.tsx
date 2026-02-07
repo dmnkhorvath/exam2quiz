@@ -183,6 +183,7 @@ export default function PipelinesPage() {
             <thead>
               <tr>
                 <th className="w-8"></th>
+                <th>ID</th>
                 <th>File</th>
                 <th>Status</th>
                 <th>Stage</th>
@@ -209,6 +210,9 @@ export default function PipelinesPage() {
                         onChange={() => toggleSelect(p.id)}
                       />
                     )}
+                  </td>
+                  <td className="font-mono text-xs" title={p.id}>
+                    {p.id.slice(-8)}
                   </td>
                   <td className="font-mono text-xs max-w-48 truncate">
                     {isBatch && (
@@ -291,7 +295,7 @@ export default function PipelinesPage() {
               })}
               {runs.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center text-base-content/60 py-8">
+                  <td colSpan={9} className="text-center text-base-content/60 py-8">
                     No pipeline runs
                   </td>
                 </tr>

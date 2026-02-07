@@ -648,15 +648,43 @@ export async function pipelineRoutes(app: FastifyInstance) {
       const sourceFilenames: string[] = [];
 
       for (const run of runs) {
-        const parsedPath = join(config.OUTPUT_DIR, run.tenantId, run.id, "parsed.json");
-        try {
-          const content = await readFile(parsedPath, "utf-8");
-          const parsed = JSON.parse(content) as unknown[];
-          mergedQuestions.push(...parsed);
-        } catch {
-          return reply.code(400).send({
-            error: `Could not read parsed data from pipeline ${run.id}. Its output files may have been deleted.`,
+        const isBatchParent = (run.totalBatches ?? 0) > 0;
+
+        if (isBatchParent) {
+          // Batch parent: read parsed.json from each child run
+          const childRuns = await db.pipelineRun.findMany({
+            where: { parentRunId: run.id, status: "COMPLETED" },
+            orderBy: { batchIndex: "asc" },
           });
+          if (childRuns.length === 0) {
+            return reply.code(400).send({
+              error: `Batch pipeline ${run.id} has no completed child runs.`,
+            });
+          }
+          for (const child of childRuns) {
+            const parsedPath = join(config.OUTPUT_DIR, child.tenantId, child.id, "parsed.json");
+            try {
+              const content = await readFile(parsedPath, "utf-8");
+              const parsed = JSON.parse(content) as unknown[];
+              mergedQuestions.push(...parsed);
+            } catch {
+              return reply.code(400).send({
+                error: `Could not read parsed data from batch child ${child.id} of pipeline ${run.id}. Its output files may have been deleted.`,
+              });
+            }
+          }
+        } else {
+          // Standard run: read parsed.json directly
+          const parsedPath = join(config.OUTPUT_DIR, run.tenantId, run.id, "parsed.json");
+          try {
+            const content = await readFile(parsedPath, "utf-8");
+            const parsed = JSON.parse(content) as unknown[];
+            mergedQuestions.push(...parsed);
+          } catch {
+            return reply.code(400).send({
+              error: `Could not read parsed data from pipeline ${run.id}. Its output files may have been deleted.`,
+            });
+          }
         }
         const filenames = (run.filenames as string[] | null) ?? [];
         sourceFilenames.push(...filenames);
