@@ -609,8 +609,7 @@ function SubcategoryAddForm({
         const baseKey = first.key.includes(":") ? first.key.split(":")[0] : first.key;
         const subKey = `${baseKey}:${sub.toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
         const baseFile = first.file.replace(/(_[^.]*)?\.(\w+)$/, "");
-        const ext = first.file.match(/\.(\w+)$/)?.[1] ?? "json";
-        const subFile = `${baseFile}_${sub.toLowerCase().replace(/[^a-z0-9]/g, "_")}.${ext}`;
+        const subFile = `${baseFile}_${sub.toLowerCase().replace(/[^a-z0-9]/g, "_")}.json`;
         results.push(
           await categoriesApi.create({
             key: subKey,

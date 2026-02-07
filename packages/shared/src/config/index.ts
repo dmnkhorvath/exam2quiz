@@ -25,6 +25,12 @@ const EnvSchema = z.object({
   // Monitoring
   METRICS_PORT: z.coerce.number().default(9090),
 
+  // Cache Redis (separate instance for HTML caching)
+  CACHE_REDIS_HOST: z.string().default("localhost"),
+  CACHE_REDIS_PORT: z.coerce.number().default(6380),
+  CACHE_REDIS_PASSWORD: z.string().default(""),
+  CACHE_TTL_SECONDS: z.coerce.number().default(300),
+
   // Environment
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
@@ -48,5 +54,14 @@ export function getRedisConfig() {
     port: config.REDIS_PORT,
     password: config.REDIS_PASSWORD || undefined,
     maxRetriesPerRequest: null,
+  };
+}
+
+export function getCacheRedisConfig() {
+  const config = getConfig();
+  return {
+    host: config.CACHE_REDIS_HOST,
+    port: config.CACHE_REDIS_PORT,
+    password: config.CACHE_REDIS_PASSWORD || undefined,
   };
 }

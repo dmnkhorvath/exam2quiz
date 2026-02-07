@@ -13,6 +13,7 @@ import { pipelineRoutes } from "./routes/pipelines.js";
 import { categoryRoutes } from "./routes/categories.js";
 import { tenantSettingsRoutes } from "./routes/tenant-settings.js";
 import { questionRoutes } from "./routes/questions.js";
+import { publicRoutes } from "./routes/public.js";
 
 const config = getConfig();
 
@@ -49,6 +50,9 @@ async function start() {
   await app.register(categoryRoutes);
   await app.register(tenantSettingsRoutes);
   await app.register(questionRoutes);
+
+  // Public guest routes (no auth required) — registered last so specific routes take precedence
+  await app.register(publicRoutes);
 
   // Start metrics server on separate port
   await startMetricsServer();
