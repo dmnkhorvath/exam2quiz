@@ -114,6 +114,9 @@ importers:
       '@fastify/swagger-ui':
         specifier: ^5.2.0
         version: 5.2.5
+      '@google/generative-ai':
+        specifier: ^0.21.0
+        version: 0.21.0
       '@prisma/client':
         specifier: ^6.3.0
         version: 6.19.2(prisma@6.19.2(typescript@5.9.3))(typescript@5.9.3)
@@ -149,7 +152,7 @@ importers:
   packages/shared:
     dependencies:
       '@prisma/client':
-        specifier: ^6.3.0
+        specifier: ^6.19.2
         version: 6.19.2(prisma@6.19.2(typescript@5.9.3))(typescript@5.9.3)
       bullmq:
         specifier: ^5.34.0
