@@ -10,6 +10,7 @@ export async function questionRoutes(app: FastifyInstance) {
       subcategory?: string;
       page?: string;
       limit?: string;
+      tenantId?: string;
     };
   }>("/api/questions", {
     preHandler: [app.authenticate],
@@ -22,13 +23,14 @@ export async function questionRoutes(app: FastifyInstance) {
           subcategory: { type: "string" },
           page: { type: "string" },
           limit: { type: "string" },
+          tenantId: { type: "string" },
         },
       },
     },
     handler: async (request, reply) => {
       const db = getDb();
       const { role, tenantId } = request.user;
-      const { pipelineRunId, category, subcategory, page, limit } = request.query;
+      const { pipelineRunId, category, subcategory, page, limit, tenantId: filterTenantId } = request.query;
 
       if (!tenantId && role !== "SUPER_ADMIN") {
         return reply.code(400).send({ error: "User must belong to a tenant" });
@@ -37,7 +39,10 @@ export async function questionRoutes(app: FastifyInstance) {
       // Build filter
       const where: Record<string, unknown> = {};
 
-      if (role === "SUPER_ADMIN" && pipelineRunId) {
+      if (role === "SUPER_ADMIN" && filterTenantId) {
+        // SUPER_ADMIN can filter by explicit tenantId
+        where.tenantId = filterTenantId;
+      } else if (role === "SUPER_ADMIN" && pipelineRunId) {
         // SUPER_ADMIN can query by pipelineRunId across tenants
         const run = await db.pipelineRun.findUnique({ where: { id: pipelineRunId } });
         if (!run) return reply.code(404).send({ error: "Pipeline run not found" });

@@ -16,3 +16,5 @@
 {"ts":"2026-02-07T17:01:33.247023Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
 {"ts":"2026-02-07T17:47:34.611691Z","type":{"kind":"loop_started","prompt":"as admin give me option to restart past pipelines as they were just started now from start clearing all related pipeline data except the documents,  also as admin i want to see questions per tanent not all pipelines in an endless list but let me filter tanent first then show pipelines"}}
 {"ts":"2026-02-07T18:08:41.989495Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
+{"ts":"2026-02-07T18:17:39.501890Z","type":{"kind":"loop_started","prompt":"for superadmins only add option to filter quesiton pipelines per tenant on questions page"}}
+{"ts":"2026-02-07T18:23:27.615145Z","type":{"kind":"loop_completed","reason":"completion_promise"}}

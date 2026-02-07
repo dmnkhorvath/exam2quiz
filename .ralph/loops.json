@@ -1,12 +1,3 @@
 {
-  "loops": [
-    {
-      "id": "slick-tulip",
-      "pid": 94306,
-      "started": "2026-02-07T17:54:00.694836Z",
-      "prompt": "let guests mark questions in guest question viewer mode as wrong, wrong marked questions must be lis...",
-      "worktree_path": "/Users/dominik.horvath/git/exams2quiz/.worktrees/slick-tulip",
-      "workspace": "/Users/dominik.horvath/git/exams2quiz/.worktrees/slick-tulip"
-    }
-  ]
+  "loops": []
 }

@@ -1,14 +1,30 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { pipelinesApi, type PipelineRun } from "../services/pipelines";
+import { tenantsApi } from "../services/tenants";
+import { useAuth } from "../hooks/useAuth";
 
 export default function QuestionsPage() {
+  const { isSuperAdmin, user } = useAuth();
   const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<string>("");
+  const [selectedTenantId, setSelectedTenantId] = useState<string>(user?.tenantId ?? "");
+
+  const { data: tenants } = useQuery({
+    queryKey: ["tenants"],
+    queryFn: () => tenantsApi.list(),
+    enabled: isSuperAdmin,
+  });
+
+  const effectiveTenantId = selectedTenantId || (isSuperAdmin ? tenants?.[0]?.id : user?.tenantId) || "";
 
   const { data: pipelinesData, isLoading: pipelinesLoading } = useQuery({
-    queryKey: ["pipelines", { status: "COMPLETED", limit: 50 }],
-    queryFn: () => pipelinesApi.list({ status: "COMPLETED", limit: 50 }),
+    queryKey: ["pipelines", { status: "COMPLETED", limit: 50, tenantId: effectiveTenantId }],
+    queryFn: () => pipelinesApi.list({
+      status: "COMPLETED",
+      limit: 50,
+      tenantId: isSuperAdmin ? effectiveTenantId || undefined : undefined,
+    }),
   });
 
   const { data: splitsData, isLoading: splitsLoading } = useQuery({
@@ -33,6 +49,26 @@ export default function QuestionsPage() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">Questions</h1>
+
+      {/* Tenant filter (superadmin only) */}
+      {isSuperAdmin && tenants && tenants.length > 0 && (
+        <div className="form-control w-full max-w-xs">
+          <label className="label"><span className="label-text">Tenant</span></label>
+          <select
+            className="select select-bordered"
+            value={effectiveTenantId}
+            onChange={(e) => {
+              setSelectedTenantId(e.target.value);
+              setSelectedRunId("");
+              setSelectedFile("");
+            }}
+          >
+            {tenants.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Pipeline filter */}
       <div className="form-control w-full max-w-md">
