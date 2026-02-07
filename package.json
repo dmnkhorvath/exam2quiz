@@ -22,6 +22,7 @@
     "docker:down": "docker compose down",
     "docker:build": "docker compose build"
   },
+  "packageManager": "pnpm@10.27.0",
   "engines": {
     "node": ">=20.0.0"
   },
