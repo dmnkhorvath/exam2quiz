@@ -2,9 +2,9 @@ import type { FastifyInstance } from "fastify";
 import type { MultipartFile } from "@fastify/multipart";
 import { getDb } from "@exams2quiz/shared/db";
 import { addJob } from "@exams2quiz/shared/queue";
-import { PipelineStage } from "@exams2quiz/shared/types";
+import { PipelineStage, BATCH_DEFAULTS } from "@exams2quiz/shared/types";
 import { getConfig } from "@exams2quiz/shared/config";
-import { mkdir, writeFile, rm, readFile, readdir } from "node:fs/promises";
+import { mkdir, writeFile, rm, readFile, readdir, copyFile } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
@@ -178,6 +178,139 @@ export async function pipelineRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "At least one PDF file or URL is required" });
       }
 
+      // Determine if this should be a batch run
+      const isBatch = allPdfPaths.length > BATCH_DEFAULTS.BATCH_SIZE;
+
+      if (isBatch) {
+        // ─── Batch Mode: fan-out into child runs ──────────────────
+        const batchSize = BATCH_DEFAULTS.BATCH_SIZE;
+        const chunks: { filenames: string[]; pdfPaths: string[] }[] = [];
+        for (let i = 0; i < allPdfPaths.length; i += batchSize) {
+          chunks.push({
+            filenames: allFilenames.slice(i, i + batchSize),
+            pdfPaths: allPdfPaths.slice(i, i + batchSize),
+          });
+        }
+
+        if (chunks.length > BATCH_DEFAULTS.MAX_BATCHES) {
+          await db.pipelineRun.delete({ where: { id: pipelineRun.id } });
+          return reply.code(400).send({
+            error: `Too many documents: ${allPdfPaths.length} PDFs would create ${chunks.length} batches (max ${BATCH_DEFAULTS.MAX_BATCHES}). Reduce to at most ${BATCH_DEFAULTS.MAX_BATCHES * batchSize} files.`,
+          });
+        }
+
+        const totalBatches = chunks.length;
+
+        // Update parent run with batch metadata
+        await db.pipelineRun.update({
+          where: { id: pipelineRun.id },
+          data: {
+            filenames: allFilenames,
+            sourceUrls: allSourceUrls,
+            totalPdfs: allPdfPaths.length,
+            batchSize,
+            totalBatches,
+            currentStage: PipelineStage.BATCH_COORDINATE,
+          },
+        });
+
+        // Create output dir for parent (similarity + category-split will run here)
+        const parentOutputDir = join(config.OUTPUT_DIR, tenantId, pipelineRun.id);
+        await mkdir(parentOutputDir, { recursive: true });
+
+        // Create child runs and enqueue pdf-extract for each
+        const childRunIds: string[] = [];
+        for (let idx = 0; idx < chunks.length; idx++) {
+          const chunk = chunks[idx];
+
+          const childRun = await db.pipelineRun.create({
+            data: {
+              tenantId,
+              status: "QUEUED",
+              filenames: chunk.filenames,
+              sourceUrls: [],
+              currentStage: PipelineStage.PDF_EXTRACT,
+              totalPdfs: chunk.filenames.length,
+              parentRunId: pipelineRun.id,
+              batchIndex: idx,
+              batchSize,
+              totalBatches,
+            },
+          });
+          childRunIds.push(childRun.id);
+
+          // Create child upload directory and copy PDFs
+          const childUploadDir = join(config.UPLOAD_DIR, tenantId, childRun.id);
+          await mkdir(childUploadDir, { recursive: true });
+          const childPdfPaths: string[] = [];
+          for (let j = 0; j < chunk.pdfPaths.length; j++) {
+            const dest = join(childUploadDir, chunk.filenames[j]);
+            await copyFile(chunk.pdfPaths[j], dest);
+            childPdfPaths.push(dest);
+          }
+
+          // Create child output directory
+          const childOutputDir = join(config.OUTPUT_DIR, tenantId, childRun.id);
+          await mkdir(childOutputDir, { recursive: true });
+
+          // Create PipelineJob + enqueue pdf-extract for this child
+          const childJob = await db.pipelineJob.create({
+            data: {
+              pipelineRunId: childRun.id,
+              stage: PipelineStage.PDF_EXTRACT,
+              status: "PENDING",
+            },
+          });
+
+          const childBullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
+            tenantId,
+            pipelineRunId: childRun.id,
+            pdfPaths: childPdfPaths,
+            outputDir: childOutputDir,
+          });
+
+          await db.pipelineJob.update({
+            where: { id: childJob.id },
+            data: { bullmqJobId: childBullmqJobId },
+          });
+        }
+
+        // Create batch-coordinate job on the parent
+        const coordinatorJob = await db.pipelineJob.create({
+          data: {
+            pipelineRunId: pipelineRun.id,
+            stage: PipelineStage.BATCH_COORDINATE,
+            status: "PENDING",
+          },
+        });
+
+        const coordinatorBullmqJobId = await addJob(PipelineStage.BATCH_COORDINATE, {
+          tenantId,
+          parentPipelineRunId: pipelineRun.id,
+          childPipelineRunIds: childRunIds,
+        });
+
+        await db.pipelineJob.update({
+          where: { id: coordinatorJob.id },
+          data: { bullmqJobId: coordinatorBullmqJobId },
+        });
+
+        pipelinesStartedTotal.inc({ tenant_id: tenantId });
+        pipelineFilesPerRun.observe({ tenant_id: tenantId }, allPdfPaths.length);
+
+        return reply.code(201).send({
+          id: pipelineRun.id,
+          status: "QUEUED",
+          currentStage: PipelineStage.BATCH_COORDINATE,
+          totalPdfs: allPdfPaths.length,
+          filenames: allFilenames,
+          totalBatches,
+          childRunIds,
+          createdAt: pipelineRun.createdAt,
+        });
+      }
+
+      // ─── Standard Mode: single run (≤ BATCH_SIZE PDFs) ───────────
       // Update pipeline run with actual file info
       await db.pipelineRun.update({
         where: { id: pipelineRun.id },
