@@ -1,5 +1,5 @@
 {
-  "pid": 91234,
-  "started": "2026-02-08T12:18:20.922398Z",
-  "prompt": "modify similarity search worker funcitonaility, i do not want to have it run automatically and there..."
+  "pid": 35136,
+  "started": "2026-02-08T13:01:33.891871Z",
+  "prompt": "check the paused pipeline jobs bc i can not download json probably auth issue, check with chrome mcp..."
 }

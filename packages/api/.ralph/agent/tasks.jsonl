@@ -1,0 +1,1 @@
+{"id":"task-1770556723-88e3","title":"Fix audit vulnerabilities by updating bcrypt to 6.0.0","description":"Update bcrypt from 5.1.1 to 6.0.0 to resolve transitive tar vulnerabilities","status":"open","priority":2,"blocked_by":[],"created":"2026-02-08T13:18:43.690410+00:00"}
