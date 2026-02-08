@@ -9,11 +9,10 @@ import { Prisma } from "@prisma/client";
 import {
   PipelineStage,
   type CategorizeJobData,
-  type SimilarityJobData,
   type Category,
 } from "@exams2quiz/shared/types";
 import { getConfig } from "@exams2quiz/shared/config";
-import { createWorker, addJob } from "@exams2quiz/shared/queue";
+import { createWorker } from "@exams2quiz/shared/queue";
 import { getDb } from "@exams2quiz/shared/db";
 import { logStageEvent, trackQuestionProcessed, trackGeminiCall, trackCategoryQuestion } from "../metrics.js";
 
@@ -328,7 +327,7 @@ async function enqueueNextStageOrComplete(
   tenantId: string,
   pipelineRunId: string,
   mergedPath: string,
-  outputPath: string,
+  _outputPath: string,
 ): Promise<void> {
   const db = getDb();
 
@@ -349,28 +348,16 @@ async function enqueueNextStageOrComplete(
     return;
   }
 
-  // Standalone run — enqueue similarity on the full tenant question set
-  const nextJobData: SimilarityJobData = {
-    tenantId,
-    pipelineRunId,
-    inputPath: mergedPath,
-    outputPath: path.join(path.dirname(outputPath), "similarity.json"),
-  };
-  await addJob(
-    PipelineStage.SIMILARITY,
-    nextJobData as unknown as Record<string, unknown>,
-  );
-  await db.pipelineJob.create({
-    data: {
-      pipelineRunId,
-      stage: PipelineStage.SIMILARITY,
-      status: "PENDING",
-    },
-  });
+  // Standalone run — pause for manual similarity upload
+  // User will download categorized JSON, run similarity externally, then upload result
   await db.pipelineRun.update({
     where: { id: pipelineRunId },
-    data: { currentStage: PipelineStage.SIMILARITY },
+    data: {
+      status: "PAUSED",
+      currentStage: PipelineStage.MANUAL_SIMILARITY_UPLOAD
+    },
   });
+  logStageEvent("categorize", "info", "paused_for_similarity", "Pipeline paused for manual similarity upload", { tenantId, pipelineRunId, categorizedPath: mergedPath });
 }
 
 // ─── BullMQ Processor ─────────────────────────────────────────────

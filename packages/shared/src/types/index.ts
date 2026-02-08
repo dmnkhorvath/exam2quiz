@@ -6,6 +6,7 @@ export const PipelineStage = {
   GEMINI_PARSE: "gemini-parse",
   CATEGORIZE: "categorize",
   BATCH_COORDINATE: "batch-coordinate",
+  MANUAL_SIMILARITY_UPLOAD: "manual-similarity-upload",
   SIMILARITY: "similarity",
   CATEGORY_SPLIT: "category-split",
 } as const;
@@ -16,6 +17,7 @@ export const PIPELINE_STAGES_ORDERED: PipelineStage[] = [
   PipelineStage.PDF_EXTRACT,
   PipelineStage.GEMINI_PARSE,
   PipelineStage.CATEGORIZE,
+  PipelineStage.MANUAL_SIMILARITY_UPLOAD,
   PipelineStage.SIMILARITY,
   PipelineStage.CATEGORY_SPLIT,
 ];

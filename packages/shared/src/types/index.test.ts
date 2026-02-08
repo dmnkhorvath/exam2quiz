@@ -15,6 +15,7 @@ describe("PipelineStage", () => {
     expect(PipelineStage.PDF_EXTRACT).toBe("pdf-extract");
     expect(PipelineStage.GEMINI_PARSE).toBe("gemini-parse");
     expect(PipelineStage.CATEGORIZE).toBe("categorize");
+    expect(PipelineStage.MANUAL_SIMILARITY_UPLOAD).toBe("manual-similarity-upload");
     expect(PipelineStage.BATCH_COORDINATE).toBe("batch-coordinate");
     expect(PipelineStage.SIMILARITY).toBe("similarity");
     expect(PipelineStage.CATEGORY_SPLIT).toBe("category-split");
@@ -25,6 +26,7 @@ describe("PipelineStage", () => {
       "pdf-extract",
       "gemini-parse",
       "categorize",
+      "manual-similarity-upload",
       "similarity",
       "category-split",
     ]);

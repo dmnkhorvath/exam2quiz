@@ -94,6 +94,7 @@ model Question {
 enum PipelineStatus {
   QUEUED
   RUNNING
+  PAUSED
   COMPLETED
   FAILED
   CANCELLED

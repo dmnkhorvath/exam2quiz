@@ -199,7 +199,7 @@ export default function PipelinesPage() {
 
       {/* Filters */}
       <div className="flex gap-2">
-        {["", "QUEUED", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"].map(
+        {["", "QUEUED", "PROCESSING", "PAUSED", "COMPLETED", "FAILED", "CANCELLED"].map(
           (s) => (
             <button
               key={s}
@@ -276,7 +276,7 @@ export default function PipelinesPage() {
                     )}
                   </td>
                   <td>
-                    {p.status !== "FAILED" && p.status !== "CANCELLED" && p.status !== "COMPLETED" ? (
+                    {p.status !== "FAILED" && p.status !== "CANCELLED" && p.status !== "COMPLETED" && p.status !== "PAUSED" ? (
                       isBatch ? (
                         <progress
                           className="progress progress-primary w-20"
@@ -307,7 +307,7 @@ export default function PipelinesPage() {
                     >
                       Detail
                     </button>
-                    {(p.status === "QUEUED" || p.status === "PROCESSING") && (
+                    {(p.status === "QUEUED" || p.status === "PROCESSING" || p.status === "PAUSED") && (
                       <button
                         className="btn btn-ghost btn-xs text-error"
                         onClick={() => cancelMut.mutate(p.id)}
@@ -374,6 +374,7 @@ function StatusBadge({ status }: { status: string }) {
   const cls: Record<string, string> = {
     QUEUED: "badge-ghost",
     PROCESSING: "badge-info",
+    PAUSED: "badge-warning",
     COMPLETED: "badge-success",
     FAILED: "badge-error",
     CANCELLED: "badge-warning",
@@ -392,11 +393,27 @@ function PipelineDetail({
   id: string;
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
+  const [similarityUrl, setSimilarityUrl] = useState("");
+
   const { data, isLoading } = useQuery({
     queryKey: ["pipeline", id],
     queryFn: () => pipelinesApi.get(id),
     refetchInterval: 3000,
   });
+
+  const submitSimilarityMut = useMutation({
+    mutationFn: (url: string) => pipelinesApi.submitSimilarityUrl(id, url),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pipeline", id] });
+      qc.invalidateQueries({ queryKey: ["pipelines"] });
+      setSimilarityUrl("");
+    },
+  });
+
+  const showManualSimilarityUI =
+    data?.status === "PAUSED" &&
+    data?.currentStage === "manual-similarity-upload";
 
   return (
     <div className="modal modal-open">
@@ -430,6 +447,63 @@ function PipelineDetail({
 
             {data.error && (
               <div className="alert alert-error text-sm">{data.error}</div>
+            )}
+
+            {showManualSimilarityUI && (
+              <div className="bg-base-200 rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">⏸️</span>
+                  <h4 className="font-semibold">Manual Similarity Search</h4>
+                </div>
+                <p className="text-sm text-base-content/70">
+                  Pipeline paused for external similarity processing. Download the categorized file,
+                  run similarity search on your service, then submit the result URL to continue.
+                </p>
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="label label-text text-xs">Step 1: Download Categorized File</label>
+                    <a
+                      href={pipelinesApi.downloadCategorized(id)}
+                      download
+                      className="btn btn-primary btn-sm w-full"
+                    >
+                      Download categorized.json
+                    </a>
+                  </div>
+
+                  <div>
+                    <label className="label label-text text-xs">Step 2: Submit Similarity Result URL</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="input input-bordered input-sm flex-1"
+                        placeholder="https://example.com/similarity_result.json"
+                        value={similarityUrl}
+                        onChange={(e) => setSimilarityUrl(e.target.value)}
+                        disabled={submitSimilarityMut.isPending}
+                      />
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={!similarityUrl.trim() || submitSimilarityMut.isPending}
+                        onClick={() => submitSimilarityMut.mutate(similarityUrl.trim())}
+                      >
+                        {submitSimilarityMut.isPending ? (
+                          <span className="loading loading-spinner loading-xs" />
+                        ) : (
+                          "Submit"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {submitSimilarityMut.isError && (
+                  <div className="alert alert-error text-sm">
+                    {submitSimilarityMut.error.message}
+                  </div>
+                )}
+              </div>
             )}
 
             {(data.childRuns?.length ?? 0) > 0 && (

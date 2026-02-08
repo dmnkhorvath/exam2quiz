@@ -1,0 +1,1 @@
+{"payload":"UI components added for manual similarity workflow. Modified PipelinesPage.tsx: added PAUSED status support, download button, URL input with submission. Type check: pass, build: pass, lint: pass (only pre-existing warning)","topic":"build.done","ts":"2026-02-08T12:29:47.393567+00:00"}

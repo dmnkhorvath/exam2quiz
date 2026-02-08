@@ -14,7 +14,7 @@ export interface PipelineRun {
   tenantId: string;
   filenames: string[];
   sourceUrls: string[];
-  status: "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  status: "QUEUED" | "PROCESSING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELLED";
   currentStage: string | null;
   progress: number;
   error: string | null;
@@ -79,4 +79,12 @@ export const pipelinesApi = {
 
   getSplit: (id: string, filename: string) =>
     api.get<{ category_name: string; subcategory_name?: string; groups: unknown[][] }>(`/pipelines/${id}/splits/${filename}`),
+
+  downloadCategorized: (id: string) => {
+    // Return the URL for direct download via anchor element
+    return `/api/pipelines/${id}/categorized`;
+  },
+
+  submitSimilarityUrl: (id: string, url: string) =>
+    api.post<void>(`/pipelines/${id}/similarity-url`, { url }),
 };

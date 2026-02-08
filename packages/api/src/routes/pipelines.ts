@@ -803,6 +803,126 @@ export async function pipelineRoutes(app: FastifyInstance) {
     },
   });
 
+  // GET /api/pipelines/:id/categorized — download categorized.json for manual similarity processing
+  app.get<{ Params: { id: string } }>("/api/pipelines/:id/categorized", {
+    preHandler: [app.authenticate],
+    handler: async (request, reply) => {
+      const db = getDb();
+      const config = getConfig();
+      const { role, tenantId } = request.user;
+
+      const run = await db.pipelineRun.findUnique({ where: { id: request.params.id } });
+      if (!run) return reply.code(404).send({ error: "Pipeline run not found" });
+      if (role !== "SUPER_ADMIN" && run.tenantId !== tenantId) {
+        return reply.code(404).send({ error: "Pipeline run not found" });
+      }
+
+      // Check if pipeline is at the MANUAL_SIMILARITY_UPLOAD stage
+      if (run.currentStage !== PipelineStage.MANUAL_SIMILARITY_UPLOAD) {
+        return reply.code(400).send({ error: "Pipeline must be at manual similarity upload stage" });
+      }
+
+      const categorizedPath = join(config.OUTPUT_DIR, run.tenantId, run.id, "categorized_merged.json");
+      try {
+        const content = await readFile(categorizedPath, "utf-8");
+        reply.header("Content-Disposition", `attachment; filename="categorized_${run.id}.json"`);
+        reply.header("Content-Type", "application/json");
+        return reply.send(content);
+      } catch {
+        return reply.code(404).send({ error: "Categorized file not found" });
+      }
+    },
+  });
+
+  // POST /api/pipelines/:id/similarity-url — submit similarity result URL and resume pipeline
+  app.post<{ Params: { id: string }; Body: { url: string } }>("/api/pipelines/:id/similarity-url", {
+    preHandler: [app.authenticate],
+    handler: async (request, reply) => {
+      const db = getDb();
+      const config = getConfig();
+      const { role, tenantId } = request.user;
+      const { url } = request.body;
+
+      if (!url || typeof url !== "string") {
+        return reply.code(400).send({ error: "URL is required" });
+      }
+
+      const run = await db.pipelineRun.findUnique({ where: { id: request.params.id } });
+      if (!run) return reply.code(404).send({ error: "Pipeline run not found" });
+      if (role !== "SUPER_ADMIN" && run.tenantId !== tenantId) {
+        return reply.code(404).send({ error: "Pipeline run not found" });
+      }
+
+      // Check if pipeline is at the MANUAL_SIMILARITY_UPLOAD stage
+      if (run.currentStage !== PipelineStage.MANUAL_SIMILARITY_UPLOAD) {
+        return reply.code(400).send({ error: "Pipeline must be at manual similarity upload stage" });
+      }
+
+      // Download the similarity JSON from the provided URL
+      const outputDir = join(config.OUTPUT_DIR, run.tenantId, run.id);
+      const similarityPath = join(outputDir, "similarity.json");
+
+      try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          return reply.code(400).send({ error: `Failed to download file: ${response.statusText}` });
+        }
+
+        const content = await response.text();
+
+        // Validate it's valid JSON with expected structure
+        try {
+          const parsed = JSON.parse(content);
+          if (!Array.isArray(parsed)) {
+            return reply.code(400).send({ error: "Invalid similarity result format: expected array" });
+          }
+        } catch {
+          return reply.code(400).send({ error: "Invalid JSON format" });
+        }
+
+        // Write the similarity result to the expected location
+        await writeFile(similarityPath, content, "utf-8");
+
+        // Enqueue category-split stage
+        const nextJobData = {
+          tenantId: run.tenantId,
+          pipelineRunId: run.id,
+          inputPath: similarityPath,
+          outputDir: join(outputDir, "split"),
+        };
+
+        await addJob(
+          PipelineStage.CATEGORY_SPLIT,
+          nextJobData as unknown as Record<string, unknown>,
+        );
+
+        // Create job record
+        await db.pipelineJob.create({
+          data: {
+            pipelineRunId: run.id,
+            stage: PipelineStage.CATEGORY_SPLIT,
+            status: "PENDING",
+          },
+        });
+
+        // Update pipeline run status
+        await db.pipelineRun.update({
+          where: { id: run.id },
+          data: {
+            status: "RUNNING",
+            currentStage: PipelineStage.CATEGORY_SPLIT,
+          },
+        });
+
+        return { success: true, message: "Similarity result uploaded, pipeline resumed" };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        return reply.code(500).send({ error: `Failed to process similarity URL: ${message}` });
+      }
+    },
+  });
+
   // GET /api/pipelines/:id/splits — list available category split files
   app.get<{ Params: { id: string } }>("/api/pipelines/:id/splits", {
     preHandler: [app.authenticate],
