@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { api, getToken } from "./api";
 
 export interface BatchChildRun {
   id: string;
@@ -82,7 +82,9 @@ export const pipelinesApi = {
 
   downloadCategorized: (id: string) => {
     // Return the URL for direct download via anchor element
-    return `/api/pipelines/${id}/categorized`;
+    // Include token as query param since <a> tags don't send custom headers
+    const token = getToken();
+    return `/api/pipelines/${id}/categorized${token ? `?token=${token}` : ""}`;
   },
 
   submitSimilarityUrl: (id: string, url: string) =>

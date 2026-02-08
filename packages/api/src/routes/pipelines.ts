@@ -804,8 +804,15 @@ export async function pipelineRoutes(app: FastifyInstance) {
   });
 
   // GET /api/pipelines/:id/categorized — download categorized.json for manual similarity processing
-  app.get<{ Params: { id: string } }>("/api/pipelines/:id/categorized", {
-    preHandler: [app.authenticate],
+  // Accepts token via Authorization header or ?token= query param (for <a> tags)
+  app.get<{ Params: { id: string }; Querystring: { token?: string } }>("/api/pipelines/:id/categorized", {
+    schema: { querystring: { type: "object", properties: { token: { type: "string" } } } },
+    preHandler: [async (request, reply) => {
+      if (!request.headers.authorization && request.query.token) {
+        request.headers.authorization = `Bearer ${request.query.token}`;
+      }
+      return app.authenticate(request, reply);
+    }],
     handler: async (request, reply) => {
       const db = getDb();
       const config = getConfig();
