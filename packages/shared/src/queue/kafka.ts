@@ -65,7 +65,12 @@ export async function createConsumer(
   handler: (payload: EachMessagePayload) => Promise<void>
 ): Promise<Consumer> {
   const client = getKafka();
-  const consumer = client.consumer({ groupId });
+  const consumer = client.consumer({
+    groupId,
+    sessionTimeout: 300_000,     // 5 min – gemini-parse can take minutes per job
+    heartbeatInterval: 10_000,   // 10 s
+    maxWaitTimeInMs: 5_000,
+  });
 
   await consumer.connect();
   await consumer.subscribe({ topics, fromBeginning: false });

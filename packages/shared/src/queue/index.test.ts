@@ -97,7 +97,12 @@ describe("Queue (Kafka)", () => {
       const processor = vi.fn().mockResolvedValue(undefined);
       const worker = await createWorker(PipelineStage.PDF_EXTRACT, processor);
 
-      expect(mocks.mockKafka.consumer).toHaveBeenCalledWith({ groupId: "exams2quiz-pdf-extract-group" });
+      expect(mocks.mockKafka.consumer).toHaveBeenCalledWith({
+        groupId: "exams2quiz-pdf-extract-group",
+        sessionTimeout: 300_000,
+        heartbeatInterval: 10_000,
+        maxWaitTimeInMs: 5_000,
+      });
       expect(mocks.mockConsumer.connect).toHaveBeenCalled();
       expect(mocks.mockConsumer.subscribe).toHaveBeenCalledWith({
         topics: ["exams2quiz-pdf-extract"],
