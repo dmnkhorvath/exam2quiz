@@ -116,6 +116,38 @@ export async function userRoutes(app: FastifyInstance) {
     },
   });
 
+  // PUT /api/users/:id/password (SUPER_ADMIN only)
+  app.put<{
+    Params: { id: string };
+    Body: { password: string };
+  }>("/api/users/:id/password", {
+    preHandler: [app.requireRole("SUPER_ADMIN")],
+    schema: {
+      body: {
+        type: "object",
+        required: ["password"],
+        properties: {
+          password: { type: "string", minLength: 8 },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const db = getDb();
+      const targetUser = await db.user.findUnique({ where: { id: request.params.id } });
+
+      if (!targetUser) {
+        return reply.code(404).send({ error: "User not found" });
+      }
+
+      const passwordHash = await hashPassword(request.body.password);
+      await db.user.update({
+        where: { id: request.params.id },
+        data: { passwordHash },
+      });
+      return reply.code(204).send();
+    },
+  });
+
   // DELETE /api/users/:id (soft delete)
   app.delete<{ Params: { id: string } }>("/api/users/:id", {
     preHandler: [requireAdmin],

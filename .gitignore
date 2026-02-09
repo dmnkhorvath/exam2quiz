@@ -27,3 +27,6 @@ Thumbs.db
 .ralph/agent/
 .worktrees/
 .claude/env.json
+
+# ralphex progress logs
+progress*.txt

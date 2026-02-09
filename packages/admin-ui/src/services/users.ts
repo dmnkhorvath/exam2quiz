@@ -25,4 +25,7 @@ export const usersApi = {
   ) => api.put<User>(`/users/${id}`, data),
 
   delete: (id: string) => api.delete<void>(`/users/${id}`),
+
+  changePassword: (id: string, password: string) =>
+    api.put<void>(`/users/${id}/password`, { password }),
 };

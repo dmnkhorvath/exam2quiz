@@ -8,6 +8,10 @@ export default function UsersPage() {
   const qc = useQueryClient();
   const { isSuperAdmin } = useAuth();
   const [creating, setCreating] = useState(false);
+  const [changingPasswordFor, setChangingPasswordFor] = useState<{
+    id: string;
+    email: string;
+  } | null>(null);
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["users"],
@@ -79,6 +83,19 @@ export default function UsersPage() {
                     {new Date(u.createdAt).toLocaleDateString()}
                   </td>
                   <td className="space-x-1">
+                    {isSuperAdmin && (
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        onClick={() =>
+                          setChangingPasswordFor({
+                            id: u.id,
+                            email: u.email,
+                          })
+                        }
+                      >
+                        Password
+                      </button>
+                    )}
                     <button
                       className="btn btn-ghost btn-xs"
                       onClick={() =>
@@ -118,6 +135,109 @@ export default function UsersPage() {
       )}
 
       {creating && <CreateUserModal onClose={() => setCreating(false)} />}
+      {changingPasswordFor && (
+        <ChangePasswordModal
+          userId={changingPasswordFor.id}
+          userEmail={changingPasswordFor.email}
+          onClose={() => setChangingPasswordFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ChangePasswordModal({
+  userId,
+  userEmail,
+  onClose,
+}: {
+  userId: string;
+  userEmail: string;
+  onClose: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: () => usersApi.changePassword(userId, password),
+    onSuccess: () => onClose(),
+    onError: (err: Error) => setError(err.message),
+  });
+
+  const mismatch = confirm.length > 0 && password !== confirm;
+
+  return (
+    <div className="modal modal-open">
+      <div className="modal-box">
+        <h3 className="font-bold text-lg">Change Password</h3>
+        <p className="text-sm text-base-content/60 mt-1">{userEmail}</p>
+        {error && <div className="alert alert-error text-sm mt-2">{error}</div>}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (password !== confirm) {
+              setError("Passwords do not match");
+              return;
+            }
+            mutation.mutate();
+          }}
+          className="mt-4 space-y-3"
+        >
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text">New Password</span>
+            </label>
+            <input
+              className="input input-bordered w-full"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={8}
+            />
+          </div>
+
+          <div className="form-control">
+            <label className="label">
+              <span className="label-text">Confirm Password</span>
+            </label>
+            <input
+              className={`input input-bordered w-full ${mismatch ? "input-error" : ""}`}
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              minLength={8}
+            />
+            {mismatch && (
+              <label className="label">
+                <span className="label-text-alt text-error">
+                  Passwords do not match
+                </span>
+              </label>
+            )}
+          </div>
+
+          <div className="modal-action">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={mutation.isPending || mismatch}
+            >
+              {mutation.isPending && (
+                <span className="loading loading-spinner loading-sm" />
+              )}
+              Change Password
+            </button>
+          </div>
+        </form>
+      </div>
+      <div className="modal-backdrop" onClick={onClose} />
     </div>
   );
 }
