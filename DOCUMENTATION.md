@@ -29,17 +29,17 @@ Exams2Quiz automates the conversion of Hungarian exam PDFs (scanned documents wi
 
 | Layer | Technology |
 |-------|-----------|
-| **Runtime** | Node.js 22 (API + Workers), Python 3.11 (similarity) |
+| **Runtime** | Node.js 20 (API + Workers), Python 3.10+ (similarity) |
 | **API Framework** | Fastify 5 with JWT, CORS, Multipart, Swagger |
 | **Database** | PostgreSQL 16 with Prisma ORM |
 | **Message Broker** | Apache Kafka (Confluent 7.5) via KafkaJS |
-| **Cache** | Redis 7 (queue backend + separate HTML cache instance) |
+| **Cache** | Redis 7 (two instances: general-purpose + dedicated HTML page cache with LRU eviction) |
 | **AI** | Google Gemini (`gemini-3-flash-preview`) for parsing and categorization |
 | **PDF Processing** | MuPDF (extraction), Sharp (image cropping) |
 | **Similarity** | Python: sentence-transformers (E5 embeddings), HDBSCAN, cross-encoder |
 | **Admin UI** | React 18, TanStack Query, React Router, Tailwind CSS, DaisyUI |
 | **Monitoring** | Prometheus, Grafana, Loki, Promtail |
-| **Container** | Docker Compose (11 services) |
+| **Container** | Docker Compose (12 services) |
 | **Package Manager** | pnpm 10 (workspace monorepo) |
 
 ### Monorepo Layout
@@ -121,8 +121,7 @@ Extracts individual questions from scanned exam PDFs by detecting "pont" (Hungar
 
 **Processing**:
 1. Opens each PDF with MuPDF
-2. Searches each page for `\b(\d+)\s*pont\b` patterns in the right half of the page
-3. Filters false positives (e.g., "adható", "válaszonként")
+2. Searches each page for `(?<!\d[-–])\b(\d+)\s*pont\b(?!\s*adható)` patterns in the right half of the page (negative lookbehind excludes ranges, negative lookahead filters false positives)
 4. Calculates crop regions between consecutive question markers
 5. Renders the page at target DPI (default 150) and crops each question region
 6. Saves as `{pdfStem}_q{NNN}_{points}pt.png`
@@ -212,7 +211,7 @@ See [Batch Processing](#4-batch-processing) for details.
 
 ## 4. Batch Processing
 
-When a pipeline upload contains more than `BATCH_SIZE` PDFs (default: 10), the system automatically splits it into parallel batches.
+When a pipeline upload contains more than `BATCH_SIZE` PDFs (default: 30), the system automatically splits it into parallel batches.
 
 ### Fan-Out (API)
 
@@ -424,13 +423,13 @@ Producer (API/Worker) → Kafka Topic → Consumer Group → Worker Handler
 All workers are registered in `packages/workers/src/index.ts`:
 
 ```typescript
-// Each worker is a Kafka consumer subscribed to its stage topic
-createWorker(PipelineStage.PDF_EXTRACT, processPdfExtract);
-createWorker(PipelineStage.GEMINI_PARSE, processGeminiParse);
-createWorker(PipelineStage.CATEGORIZE, processCategorize);
-createWorker(PipelineStage.SIMILARITY, processSimilarity);
-createWorker(PipelineStage.CATEGORY_SPLIT, processCategorySplit);
-createWorker(PipelineStage.BATCH_COORDINATE, processBatchCoordinate);
+// Each worker factory creates a Kafka consumer subscribed to its stage topic
+const pdfExtractWorker = await createPdfExtractWorker();
+const geminiParseWorker = await createGeminiParseWorker();
+const categorizeWorker = await createCategorizeWorker();
+const similarityWorker = await createSimilarityWorker();
+const categorySplitWorker = await createCategorySplitWorker();
+const batchCoordinateWorker = await createBatchCoordinateWorker();
 ```
 
 ### Error Handling Pattern
@@ -602,7 +601,7 @@ Public pages support dark mode via DaisyUI's theme system:
 
 ## 11. Infrastructure
 
-### Docker Services (11)
+### Docker Services (12)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -635,7 +634,7 @@ Public pages support dark mode via DaisyUI's theme system:
 | # | Service | Image | Port | Role |
 |---|---------|-------|------|------|
 | 1 | **postgres** | `postgres:16-alpine` | 5432 | Primary datastore (tenants, users, pipelines, questions) |
-| 2 | **redis** | `redis:7-alpine` | 6379 | Queue backend (256MB, noeviction) |
+| 2 | **redis** | `redis:7-alpine` | 6379 | General-purpose Redis (256MB, noeviction) |
 | 3 | **redis-cache** | `redis:7-alpine` | 6380 | HTML page cache (128MB, allkeys-lru) |
 | 4 | **zookeeper** | `cp-zookeeper:7.5.0` | 2181 | Kafka cluster coordination |
 | 5 | **kafka** | `cp-kafka:7.5.0` | 9092 | Message broker for pipeline stages |
@@ -682,7 +681,7 @@ Public pages support dark mode via DaisyUI's theme system:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgresql://exams2quiz:exams2quiz@localhost:5432/exams2quiz` | PostgreSQL connection string |
-| `REDIS_HOST` | `localhost` | Redis host (queue backend) |
+| `REDIS_HOST` | `localhost` | Redis host (general-purpose) |
 | `REDIS_PORT` | `6379` | Redis port |
 | `CACHE_REDIS_HOST` | `localhost` | Cache Redis host |
 | `CACHE_REDIS_PORT` | `6380` | Cache Redis port |
@@ -714,7 +713,7 @@ Public pages support dark mode via DaisyUI's theme system:
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `BATCH_SIZE` | 10 | PDFs per batch |
+| `BATCH_SIZE` | 30 | PDFs per batch |
 | `MAX_BATCHES` | 20 | Maximum batches per parent run |
 | `COORDINATOR_POLL_INTERVAL` | 10s | Batch coordinator polling interval |
 | `COORDINATOR_TIMEOUT` | 4h | Maximum batch processing time |
@@ -731,7 +730,16 @@ Public pages support dark mode via DaisyUI's theme system:
 
 ### Category Configuration
 
-Default categories are defined in `config/categories.json`. Each tenant can customize their categories via the admin UI. Categories support optional subcategories:
+Default categories are defined in `config/categories.json`:
+
+```json
+[
+  { "key": "ALTALANOS_ANATOMIA_ES_KORTAN", "name": "Általános anatómia és kortan", "file": "altalanos_anatomia_es_kortan.json" },
+  { "key": "KERINGES", "name": "Keringés", "file": "keringes.json" }
+]
+```
+
+Each tenant can customize their categories via the admin UI, adding optional `subcategory` and `sortOrder` fields:
 
 ```json
 {
