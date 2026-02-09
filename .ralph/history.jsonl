@@ -126,3 +126,5 @@
 {"ts":"2026-02-09T11:19:36.874092Z","type":{"kind":"loop_started","prompt":"in need the feature to set gemini api base url to tunnel traffic to litellm"}}
 {"ts":"2026-02-09T11:19:48.668141Z","type":{"kind":"loop_started","prompt":"in need the feature to set gemini api base url to tunnel traffic to litellm"}}
 {"ts":"2026-02-09T11:23:50.323523Z","type":{"kind":"loop_completed","reason":"completion_promise"}}
+{"ts":"2026-02-09T12:07:25.814602Z","type":{"kind":"loop_started","prompt":"make sure that litellm endpoint can be used for the gemini model tasks, base url and api key are correct but i get api error, check logs on you own"}}
+{"ts":"2026-02-09T12:22:05.616559Z","type":{"kind":"loop_completed","reason":"completion_promise"}}

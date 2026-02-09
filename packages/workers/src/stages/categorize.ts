@@ -17,7 +17,7 @@ import { getDb } from "@exams2quiz/shared/db";
 import { logStageEvent, trackQuestionProcessed, trackGeminiCall, trackCategoryQuestion } from "../metrics.js";
 
 // ─── Constants ────────────────────────────────────────────────────
-const GEMINI_MODEL = "gemini-3-flash-preview";
+const GEMINI_MODEL = "gemini/gemini-3-flash-preview";
 const MAX_RETRIES = 3;
 const CONCURRENCY_LIMIT = 10;
 const UPSERT_CHUNK_SIZE = 100;

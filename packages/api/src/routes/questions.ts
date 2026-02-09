@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 // ─── Gemini constants (mirrored from workers) ─────────────────────
-const GEMINI_MODEL = "gemini-3-flash-preview";
+const GEMINI_MODEL = "gemini/gemini-3-flash-preview";
 
 const PARSE_SYSTEM_PROMPT = `Parse this Hungarian medical exam image. RED TEXT = correct answers filled in by solution key.
 

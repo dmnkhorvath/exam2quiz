@@ -129,6 +129,8 @@ services:
       API_HOST: "0.0.0.0"
       API_PORT: "3000"
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_API_BASE_URL: ${GEMINI_API_BASE_URL:-}
       NODE_ENV: ${NODE_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       UPLOAD_DIR: /data/uploads
@@ -175,6 +177,7 @@ services:
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-3}
       KAFKA_BROKER: kafka:29092
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_API_BASE_URL: ${GEMINI_API_BASE_URL:-}
       NODE_ENV: ${NODE_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       UPLOAD_DIR: /data/uploads
