@@ -1,4 +1,4 @@
-import { type Job, type Worker } from "bullmq";
+import { Consumer } from "kafkajs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -82,9 +82,9 @@ interface SimilarityOutputEntry {
   similarity_group_id?: string | null;
 }
 
-// ─── BullMQ Processor ─────────────────────────────────────────────
+// ─── Kafka Processor ─────────────────────────────────────────────
 async function processCategorySplit(
-  job: Job<CategorySplitJobData>,
+  job: { data: CategorySplitJobData },
 ): Promise<{
   totalQuestions: number;
   categoriesWritten: number;
@@ -107,7 +107,7 @@ async function processCategorySplit(
     const raw = await readFile(inputPath, "utf-8");
     const data: SimilarityOutputEntry[] = JSON.parse(raw);
 
-    await job.updateProgress(10);
+    // await job.updateProgress(10);
 
     // Group by subcategory (preferred) or category
     const splitGroups = new Map<string, { category: string; subcategory?: string; items: SimilarityOutputEntry[] }>();
@@ -136,7 +136,7 @@ async function processCategorySplit(
       logStageEvent("category-split", "warn", "questions_without_category", `${skipped} questions had no category`, { skippedCount: skipped });
     }
 
-    await job.updateProgress(30);
+    // await job.updateProgress(30);
 
     // Create output directory
     await mkdir(outputDir, { recursive: true });
@@ -167,7 +167,7 @@ async function processCategorySplit(
 
       written++;
       const progress = 30 + Math.round((written / sortedCategories.length) * 60);
-      await job.updateProgress(progress);
+      // await job.updateProgress(progress);
       await db.pipelineJob.updateMany({
         where: { pipelineRunId, stage: PipelineStage.CATEGORY_SPLIT },
         data: { progress },
@@ -176,7 +176,7 @@ async function processCategorySplit(
       logStageEvent("category-split", "info", "category_written", `${groupName}: ${items.length} questions, ${grouped.length} groups`, { category: categoryName, subcategory, questionCount: items.length, groupCount: grouped.length });
     }
 
-    await job.updateProgress(95);
+    // await job.updateProgress(95);
 
     const result = {
       totalQuestions: data.length,
@@ -215,7 +215,7 @@ async function processCategorySplit(
     });
     trackPipelineRunCompleted("completed");
 
-    await job.updateProgress(100);
+    // await job.updateProgress(100);
 
     logStageEvent("category-split", "info", "job_completed", `${written} categories written, pipeline run completed`, { pipelineRunId, categoriesWritten: written, totalQuestions: data.length });
     return result;
@@ -244,21 +244,13 @@ async function processCategorySplit(
 }
 
 // ─── Worker Registration ──────────────────────────────────────────
-export function createCategorySplitWorker(): Worker<CategorySplitJobData> {
+export async function createCategorySplitWorker(): Promise<Consumer> {
   const config = getConfig();
-  const worker = createWorker<CategorySplitJobData>(
+  const worker = await createWorker(
     PipelineStage.CATEGORY_SPLIT,
     processCategorySplit,
     { concurrency: config.WORKER_CONCURRENCY },
   );
-
-  worker.on("completed", (job) => {
-    console.log(`[category-split] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[category-split] Job ${job?.id} failed:`, err.message);
-  });
 
   console.log("[category-split] Worker registered");
   return worker;

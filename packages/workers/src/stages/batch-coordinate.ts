@@ -1,4 +1,4 @@
-import { type Job, type Worker } from "bullmq";
+import { Consumer } from "kafkajs";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -40,9 +40,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ─── BullMQ Processor ─────────────────────────────────────────────
+// ─── Kafka Processor ─────────────────────────────────────────────
 async function processBatchCoordinate(
-  job: Job<BatchCoordinatorJobData>,
+  job: { data: BatchCoordinatorJobData },
 ): Promise<{
   childrenCompleted: number;
   childrenFailed: number;
@@ -104,9 +104,9 @@ async function processBatchCoordinate(
 
       pollCount++;
 
-      // Update progress to prevent BullMQ stalling
+      // Update progress to prevent stalled job appearance (though Kafka doesn't use this directly)
       const progress = Math.round((completed / totalChildren) * 100);
-      await job.updateProgress(progress);
+      // await job.updateProgress(progress);
       await db.pipelineJob.updateMany({
         where: { pipelineRunId: parentPipelineRunId, stage: PipelineStage.BATCH_COORDINATE },
         data: { progress },
@@ -206,7 +206,7 @@ async function processBatchCoordinate(
       },
     });
 
-    await job.updateProgress(100);
+    // await job.updateProgress(100);
 
     logStageEvent("batch-coordinate", "info", "job_completed", `Coordinator done. ${allTenantQuestions.length} questions forwarded to similarity.`, { parentPipelineRunId, totalQuestions: allTenantQuestions.length });
 
@@ -239,25 +239,17 @@ async function processBatchCoordinate(
 }
 
 // ─── Worker Registration ──────────────────────────────────────────
-export function createBatchCoordinateWorker(): Worker<BatchCoordinatorJobData> {
+export async function createBatchCoordinateWorker(): Promise<Consumer> {
   const config = getConfig();
-  const worker = createWorker<BatchCoordinatorJobData>(
+  const worker = await createWorker(
     PipelineStage.BATCH_COORDINATE,
     processBatchCoordinate,
     {
       concurrency: config.WORKER_CONCURRENCY,
-      lockDuration: BATCH_DEFAULTS.COORDINATOR_TIMEOUT,  // 4 hours — long-polling job
-      stalledInterval: 30 * 60 * 1000,                   // 30 min stall check
+      // lockDuration: BATCH_DEFAULTS.COORDINATOR_TIMEOUT, // Kafka doesn't support lockDuration like BullMQ
+      // stalledInterval: 30 * 60 * 1000,
     },
   );
-
-  worker.on("completed", (job) => {
-    console.log(`[batch-coordinate] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[batch-coordinate] Job ${job?.id} failed:`, err.message);
-  });
 
   console.log("[batch-coordinate] Worker registered");
   return worker;

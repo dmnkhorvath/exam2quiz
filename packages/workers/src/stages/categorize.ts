@@ -1,4 +1,4 @@
-import { type Job, type Worker } from "bullmq";
+import { Consumer } from "kafkajs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -299,7 +299,7 @@ async function categorizeWithConcurrency(
   categories: Category[],
   systemPrompt: string,
   concurrency: number,
-  onProgress: (completed: number, total: number) => void,
+  onProgress: (completed: number, total: number) => Promise<void>,
 ): Promise<CategorizedQuestionEntry[]> {
   const results: CategorizedQuestionEntry[] = new Array(questions.length);
   let completed = 0;
@@ -308,10 +308,10 @@ async function categorizeWithConcurrency(
     const batch = questions.slice(i, i + concurrency);
     const batchPromises = batch.map((q, batchIdx) =>
       categorizeSingleQuestion(q, apiKey, categories, systemPrompt).then(
-        (result) => {
+        async (result) => {
           results[i + batchIdx] = result;
           completed++;
-          onProgress(completed, questions.length);
+          await onProgress(completed, questions.length);
           return result;
         },
       ),
@@ -360,9 +360,9 @@ async function enqueueNextStageOrComplete(
   logStageEvent("categorize", "info", "paused_for_similarity", "Pipeline paused for manual similarity upload", { tenantId, pipelineRunId, categorizedPath: mergedPath });
 }
 
-// ─── BullMQ Processor ─────────────────────────────────────────────
+// ─── Kafka Processor ─────────────────────────────────────────────
 async function processCategorize(
-  job: Job<CategorizeJobData>,
+  job: { data: CategorizeJobData },
 ): Promise<{
   totalQuestions: number;
   categorizedQuestions: number;
@@ -528,7 +528,7 @@ async function processCategorize(
       CONCURRENCY_LIMIT,
       async (completed, total) => {
         const progress = Math.round((completed / total) * 100);
-        await job.updateProgress(progress);
+        // job.updateProgress(progress); // No direct equivalent in Kafka wrapper yet
         await db.pipelineJob.updateMany({
           where: { pipelineRunId, stage: PipelineStage.CATEGORIZE },
           data: { progress },
@@ -590,7 +590,7 @@ async function processCategorize(
     const mergedOutputPath = path.join(path.dirname(outputPath), "categorized_merged.json");
     await writeFile(mergedOutputPath, JSON.stringify(mergedCategorized, null, 2), "utf-8");
 
-    await job.updateProgress(100);
+    // await job.updateProgress(100);
 
     // Update job status to completed
     await db.pipelineJob.updateMany({
@@ -645,21 +645,13 @@ async function processCategorize(
 }
 
 // ─── Worker Registration ──────────────────────────────────────────
-export function createCategorizeWorker(): Worker<CategorizeJobData> {
+export async function createCategorizeWorker(): Promise<Consumer> {
   const config = getConfig();
-  const worker = createWorker<CategorizeJobData>(
+  const worker = await createWorker(
     PipelineStage.CATEGORIZE,
     processCategorize,
     { concurrency: config.WORKER_CONCURRENCY },
   );
-
-  worker.on("completed", (job) => {
-    console.log(`[categorize] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[categorize] Job ${job?.id} failed:`, err.message);
-  });
 
   console.log("[categorize] Worker registered");
   return worker;

@@ -1,4 +1,4 @@
-import { type Job, type Worker } from "bullmq";
+import { Consumer } from "kafkajs";
 import { readFile, writeFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -91,9 +91,9 @@ async function runPythonSimilarity(
   }
 }
 
-// ─── BullMQ Processor ─────────────────────────────────────────────
+// ─── Kafka Processor ─────────────────────────────────────────────
 async function processSimilarity(
-  job: Job<SimilarityJobData>,
+  job: { data: SimilarityJobData },
 ): Promise<{
   totalQuestions: number;
   groupsFound: number;
@@ -185,7 +185,7 @@ async function processSimilarity(
     }
 
     // Run Python script for similarity detection
-    await job.updateProgress(10);
+    // await job.updateProgress(10);
     await db.pipelineJob.updateMany({
       where: { pipelineRunId, stage: PipelineStage.SIMILARITY },
       data: { progress: 10 },
@@ -193,7 +193,7 @@ async function processSimilarity(
 
     await runPythonSimilarity(inputPath, outputPath, crossEncoderThreshold, refineThreshold);
 
-    await job.updateProgress(90);
+    // await job.updateProgress(90);
     await db.pipelineJob.updateMany({
       where: { pipelineRunId, stage: PipelineStage.SIMILARITY },
       data: { progress: 90 },
@@ -221,7 +221,7 @@ async function processSimilarity(
       outputPath,
     };
 
-    await job.updateProgress(100);
+    // await job.updateProgress(100);
 
     // Update job status to completed
     await db.pipelineJob.updateMany({
@@ -286,21 +286,13 @@ async function processSimilarity(
 }
 
 // ─── Worker Registration ──────────────────────────────────────────
-export function createSimilarityWorker(): Worker<SimilarityJobData> {
+export async function createSimilarityWorker(): Promise<Consumer> {
   const config = getConfig();
-  const worker = createWorker<SimilarityJobData>(
+  const worker = await createWorker(
     PipelineStage.SIMILARITY,
     processSimilarity,
     { concurrency: config.WORKER_CONCURRENCY },
   );
-
-  worker.on("completed", (job) => {
-    console.log(`[similarity] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[similarity] Job ${job?.id} failed:`, err.message);
-  });
 
   console.log("[similarity] Worker registered");
   return worker;

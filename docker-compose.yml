@@ -49,6 +49,44 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ─── Zookeeper ────────────────────────────────────────────────────
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─── Kafka ────────────────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   # ─── Redis Cache (HTML page caching) ─────────────────────────────
   redis-cache:
     image: redis:7-alpine
@@ -87,6 +125,7 @@ services:
       CACHE_REDIS_HOST: redis-cache
       CACHE_REDIS_PORT: 6379
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
+      KAFKA_BROKER: kafka:29092
       API_HOST: "0.0.0.0"
       API_PORT: "3000"
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
@@ -134,6 +173,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-3}
+      KAFKA_BROKER: kafka:29092
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       NODE_ENV: ${NODE_ENV:-production}
       LOG_LEVEL: ${LOG_LEVEL:-info}

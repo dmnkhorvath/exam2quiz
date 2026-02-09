@@ -274,7 +274,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
             },
           });
 
-          const childBullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
+          const childJobId = await addJob(PipelineStage.PDF_EXTRACT, {
             tenantId,
             pipelineRunId: childRun.id,
             pdfPaths: childPdfPaths,
@@ -283,7 +283,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
 
           await db.pipelineJob.update({
             where: { id: childJob.id },
-            data: { bullmqJobId: childBullmqJobId },
+            data: { bullmqJobId: childJobId },
           });
         }
 
@@ -296,7 +296,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
           },
         });
 
-        const coordinatorBullmqJobId = await addJob(PipelineStage.BATCH_COORDINATE, {
+        const coordinatorJobId = await addJob(PipelineStage.BATCH_COORDINATE, {
           tenantId,
           parentPipelineRunId: pipelineRun.id,
           childPipelineRunIds: childRunIds,
@@ -304,7 +304,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
 
         await db.pipelineJob.update({
           where: { id: coordinatorJob.id },
-          data: { bullmqJobId: coordinatorBullmqJobId },
+          data: { bullmqJobId: coordinatorJobId },
         });
 
         pipelinesStartedTotal.inc({ tenant_id: tenantId });
@@ -346,17 +346,17 @@ export async function pipelineRoutes(app: FastifyInstance) {
       const outputDir = join(config.OUTPUT_DIR, tenantId, pipelineRun.id);
       await mkdir(outputDir, { recursive: true });
 
-      const bullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
+      const jobId = await addJob(PipelineStage.PDF_EXTRACT, {
         tenantId,
         pipelineRunId: pipelineRun.id,
         pdfPaths: allPdfPaths,
         outputDir,
       });
 
-      // Update job with BullMQ ID
+      // Update job with queue ID
       await db.pipelineJob.update({
         where: { id: job.id },
-        data: { bullmqJobId },
+        data: { bullmqJobId: jobId },
       });
 
       pipelinesStartedTotal.inc({ tenant_id: tenantId });
@@ -703,7 +703,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
             },
           });
 
-          const childBullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
+          const childJobId = await addJob(PipelineStage.PDF_EXTRACT, {
             tenantId: run.tenantId,
             pipelineRunId: childRun.id,
             pdfPaths: childPdfPaths,
@@ -712,7 +712,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
 
           await db.pipelineJob.update({
             where: { id: childJob.id },
-            data: { bullmqJobId: childBullmqJobId },
+            data: { bullmqJobId: childJobId },
           });
         }
 
@@ -725,7 +725,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
           },
         });
 
-        const coordinatorBullmqJobId = await addJob(PipelineStage.BATCH_COORDINATE, {
+        const coordinatorJobId = await addJob(PipelineStage.BATCH_COORDINATE, {
           tenantId: run.tenantId,
           parentPipelineRunId: run.id,
           childPipelineRunIds: childRunIds,
@@ -733,7 +733,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
 
         await db.pipelineJob.update({
           where: { id: coordinatorJob.id },
-          data: { bullmqJobId: coordinatorBullmqJobId },
+          data: { bullmqJobId: coordinatorJobId },
         });
 
         pipelinesStartedTotal.inc({ tenant_id: run.tenantId });
@@ -779,7 +779,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
         },
       });
 
-      const bullmqJobId = await addJob(PipelineStage.PDF_EXTRACT, {
+      const jobId = await addJob(PipelineStage.PDF_EXTRACT, {
         tenantId: run.tenantId,
         pipelineRunId: run.id,
         pdfPaths: allPdfPaths,
@@ -788,7 +788,7 @@ export async function pipelineRoutes(app: FastifyInstance) {
 
       await db.pipelineJob.update({
         where: { id: job.id },
-        data: { bullmqJobId },
+        data: { bullmqJobId: jobId },
       });
 
       pipelinesStartedTotal.inc({ tenant_id: run.tenantId });
@@ -1112,17 +1112,17 @@ export async function pipelineRoutes(app: FastifyInstance) {
 
       // Enqueue categorize job
       const categorizedPath = join(outputDir, "categorized.json");
-      const bullmqJobId = await addJob(PipelineStage.CATEGORIZE, {
+      const jobId = await addJob(PipelineStage.CATEGORIZE, {
         tenantId: runTenantId,
         pipelineRunId: newRun.id,
         parsedQuestionsPath: parsedPath,
         outputPath: categorizedPath,
       });
 
-      // Update job with BullMQ ID
+      // Update job with queue ID
       await db.pipelineJob.update({
         where: { id: job.id },
-        data: { bullmqJobId },
+        data: { bullmqJobId: jobId },
       });
 
       pipelinesStartedTotal.inc({ tenant_id: runTenantId });

@@ -1,8 +1,8 @@
-import { type Job, type Worker } from "bullmq";
 import * as mupdf from "mupdf";
 import sharp from "sharp";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Consumer } from "kafkajs";
 
 import { PipelineStage, type PdfExtractJobData, type GeminiParseJobData } from "@exams2quiz/shared/types";
 import { getConfig } from "@exams2quiz/shared/config";
@@ -200,8 +200,8 @@ async function extractQuestionsFromPdf(
   }
 }
 
-// ─── BullMQ Processor ─────────────────────────────────────────────
-async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questionCount: number; imagePaths: string[] }> {
+// ─── Kafka Processor ─────────────────────────────────────────────
+async function processPdfExtract(job: { data: PdfExtractJobData }): Promise<{ questionCount: number; imagePaths: string[] }> {
   const { tenantId, pipelineRunId, pdfPaths, outputDir, dpi = 150 } = job.data;
   const db = getDb();
 
@@ -254,7 +254,7 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
       });
 
       // Report progress as percentage of PDFs processed
-      await job.updateProgress(Math.round(((pdfIdx + 1) / pdfPaths.length) * 100));
+      // job.updateProgress(Math.round(((pdfIdx + 1) / pdfPaths.length) * 100));
 
       logStageEvent("pdf-extract", "info", "pdf_processed", `Extracted ${result.questions.length} questions from ${path.basename(pdfPath)} (${pdfIdx + 1}/${pdfPaths.length})`, { pipelineRunId });
     }
@@ -321,21 +321,13 @@ async function processPdfExtract(job: Job<PdfExtractJobData>): Promise<{ questio
 }
 
 // ─── Worker Registration ──────────────────────────────────────────
-export function createPdfExtractWorker(): Worker<PdfExtractJobData> {
+export async function createPdfExtractWorker(): Promise<Consumer> {
   const config = getConfig();
-  const worker = createWorker<PdfExtractJobData>(
+  const worker = await createWorker(
     PipelineStage.PDF_EXTRACT,
     processPdfExtract,
     { concurrency: config.WORKER_CONCURRENCY },
   );
-
-  worker.on("completed", (job) => {
-    console.log(`[pdf-extract] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[pdf-extract] Job ${job?.id} failed:`, err.message);
-  });
 
   console.log("[pdf-extract] Worker registered");
   return worker;

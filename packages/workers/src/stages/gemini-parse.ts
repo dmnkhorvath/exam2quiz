@@ -1,6 +1,6 @@
-import { type Job, type Worker } from "bullmq";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Consumer } from "kafkajs";
 
 import { GoogleGenAI } from "@google/genai";
 
@@ -216,9 +216,9 @@ async function processImagesWithConcurrency(
   return results;
 }
 
-// ─── BullMQ Processor ─────────────────────────────────────────────
+// ─── Kafka Processor ─────────────────────────────────────────────
 async function processGeminiParse(
-  job: Job<GeminiParseJobData>,
+  job: { data: GeminiParseJobData },
 ): Promise<{ totalQuestions: number; successfulQuestions: number; parsedPath: string }> {
   const { tenantId, pipelineRunId, imagePaths, outputDir } = job.data;
   const db = getDb();
@@ -240,7 +240,7 @@ async function processGeminiParse(
       CONCURRENCY_LIMIT,
       async (completed, total) => {
         const progress = Math.round((completed / total) * 100);
-        await job.updateProgress(progress);
+        // job.updateProgress(progress);
         await db.pipelineJob.updateMany({
           where: { pipelineRunId, stage: PipelineStage.GEMINI_PARSE },
           data: { progress },
@@ -264,7 +264,7 @@ async function processGeminiParse(
 
     const successfulCount = results.filter((r) => r.success).length;
 
-    await job.updateProgress(100);
+    // job.updateProgress(100);
 
     // Update job status to completed
     await db.pipelineJob.updateMany({
@@ -341,21 +341,13 @@ async function processGeminiParse(
 }
 
 // ─── Worker Registration ──────────────────────────────────────────
-export function createGeminiParseWorker(): Worker<GeminiParseJobData> {
+export async function createGeminiParseWorker(): Promise<Consumer> {
   const config = getConfig();
-  const worker = createWorker<GeminiParseJobData>(
+  const worker = await createWorker(
     PipelineStage.GEMINI_PARSE,
     processGeminiParse,
     { concurrency: config.WORKER_CONCURRENCY },
   );
-
-  worker.on("completed", (job) => {
-    console.log(`[gemini-parse] Job ${job.id} completed`);
-  });
-
-  worker.on("failed", (job, err) => {
-    console.error(`[gemini-parse] Job ${job?.id} failed:`, err.message);
-  });
 
   console.log("[gemini-parse] Worker registered");
   return worker;

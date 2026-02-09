@@ -2,55 +2,55 @@ import Fastify, { type FastifyInstance } from "fastify";
 import {
   collectDefaultMetrics,
   Counter,
-  Histogram,
-  Gauge,
+  // Histogram,
+  // Gauge,
   Registry,
 } from "prom-client";
-import { type Worker } from "bullmq";
+// import { type Worker } from "bullmq"; // Removed BullMQ dependency
 import { getConfig } from "@exams2quiz/shared/config";
-import { getDb } from "@exams2quiz/shared/db";
+// import { getDb } from "@exams2quiz/shared/db";
 
 const register = new Registry();
 
 collectDefaultMetrics({ register, prefix: "worker_" });
 
 // ─── Worker Job Metrics ──────────────────────────────────────────
-const jobsCompletedTotal = new Counter({
-  name: "worker_jobs_completed_total",
-  help: "Total completed jobs by stage and tenant",
-  labelNames: ["stage", "tenant_id"] as const,
-  registers: [register],
-});
+// const jobsCompletedTotal = new Counter({
+//   name: "worker_jobs_completed_total",
+//   help: "Total completed jobs by stage and tenant",
+//   labelNames: ["stage", "tenant_id"] as const,
+//   registers: [register],
+// });
 
-const jobsFailedTotal = new Counter({
-  name: "worker_jobs_failed_total",
-  help: "Total failed jobs by stage and tenant",
-  labelNames: ["stage", "tenant_id"] as const,
-  registers: [register],
-});
+// const jobsFailedTotal = new Counter({
+//   name: "worker_jobs_failed_total",
+//   help: "Total failed jobs by stage and tenant",
+//   labelNames: ["stage", "tenant_id"] as const,
+//   registers: [register],
+// });
 
-const jobDurationSeconds = new Histogram({
-  name: "worker_job_duration_seconds",
-  help: "Job processing duration in seconds",
-  labelNames: ["stage", "tenant_id"] as const,
-  buckets: [0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600],
-  registers: [register],
-});
+// const jobDurationSeconds = new Histogram({
+//   name: "worker_job_duration_seconds",
+//   help: "Job processing duration in seconds",
+//   labelNames: ["stage", "tenant_id"] as const,
+//   buckets: [0.1, 0.5, 1, 5, 10, 30, 60, 120, 300, 600],
+//   registers: [register],
+// });
 
-const activeJobs = new Gauge({
-  name: "worker_active_jobs",
-  help: "Number of currently active jobs by stage and tenant",
-  labelNames: ["stage", "tenant_id"] as const,
-  registers: [register],
-});
+// const activeJobs = new Gauge({
+//   name: "worker_active_jobs",
+//   help: "Number of currently active jobs by stage and tenant",
+//   labelNames: ["stage", "tenant_id"] as const,
+//   registers: [register],
+// });
 
 // ─── Pipeline Run Tracking ──────────────────────────────────────
-const pipelineRunsActive = new Gauge({
-  name: "pipeline_runs_active",
-  help: "Number of currently active pipeline runs by tenant and stage",
-  labelNames: ["tenant_id", "stage"] as const,
-  registers: [register],
-});
+// const pipelineRunsActive = new Gauge({
+//   name: "pipeline_runs_active",
+//   help: "Number of currently active pipeline runs by tenant and stage",
+//   labelNames: ["tenant_id", "stage"] as const,
+//   registers: [register],
+// });
 
 // ─── Pipeline Stage Event Metrics ───────────────────────────────
 const stageEventsTotal = new Counter({
@@ -136,6 +136,15 @@ export function trackSimilarityGroups(count: number): void {
 }
 
 // ─── Instrument Workers ─────────────────────────────────────────
+// TODO: Refactor for Kafka consumers
+// export function instrumentWorker(worker: any, stage: string): void {
+//   // Kafka consumers don't expose the same event API as BullMQ.
+//   // We need to implement Kafka-specific instrumentation (e.g. wrapping the runner).
+//   // For now, this is a no-op to allow compilation.
+//   console.log(`[metrics] Instrumentation for ${stage} (Kafka) not yet implemented`);
+// }
+
+/*
 export function instrumentWorker(worker: Worker, stage: string): void {
   worker.on("completed", (job) => {
     const tenantId = (job?.data?.tenantId as string) || "unknown";
@@ -184,6 +193,7 @@ export function instrumentWorker(worker: Worker, stage: string): void {
     activeJobs.dec({ stage, tenant_id: tenantId });
   });
 }
+*/
 
 // ─── Metrics Server ─────────────────────────────────────────────
 let metricsServer: FastifyInstance | null = null;

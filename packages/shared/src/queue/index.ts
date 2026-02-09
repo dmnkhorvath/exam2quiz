@@ -1,66 +1,61 @@
-import { Queue, Worker, type JobsOptions, type WorkerOptions, type Processor } from "bullmq";
-import { getRedisConfig } from "../config/index.js";
+import { produceMessage, createConsumer, disconnectKafka } from "./kafka.js";
 import { PipelineStage } from "../types/index.js";
+import { EachMessagePayload } from "kafkajs";
 
-// ─── Queue Names (tenant-namespaced) ───────────────────────────────
-export function getQueueName(stage: PipelineStage, tenantId?: string): string {
-  const base = `exams2quiz-${stage}`;
-  return tenantId ? `${base}-${tenantId}` : base;
-}
+// Re-export Kafka functions
+export { produceMessage, createConsumer, disconnectKafka };
 
-// ─── Queue Factory ─────────────────────────────────────────────────
-const queues = new Map<string, Queue>();
-
-export function getQueue(stage: PipelineStage, tenantId?: string): Queue {
-  const name = getQueueName(stage, tenantId);
-  if (!queues.has(name)) {
-    queues.set(
-      name,
-      new Queue(name, {
-        connection: getRedisConfig(),
-        defaultJobOptions: {
-          attempts: 3,
-          backoff: { type: "exponential", delay: 5000 },
-          removeOnComplete: { count: 1000 },
-          removeOnFail: { count: 5000 },
-        },
-      }),
-    );
-  }
-  return queues.get(name)!;
-}
-
-// ─── Worker Factory ────────────────────────────────────────────────
-export function createWorker<T>(
-  stage: PipelineStage,
-  processor: Processor<T>,
-  opts?: Partial<WorkerOptions>,
-): Worker<T> {
-  // Workers listen on the global queue (no tenant suffix) — tenant is in job data
-  const name = getQueueName(stage);
-  return new Worker<T>(name, processor, {
-    connection: getRedisConfig(),
-    concurrency: 3,
-    lockDuration: 600_000,      // 10 min — long-running stages (similarity, gemini-parse)
-    stalledInterval: 300_000,   // 5 min — check for stalled jobs
-    ...opts,
-  });
-}
-
-// ─── Add Job Helper ────────────────────────────────────────────────
+// ─── Add Job Helper (Refactored to Produce Message) ──────────────────
 export async function addJob<T extends Record<string, unknown>>(
   stage: PipelineStage,
   data: T,
-  opts?: JobsOptions,
+  _opts?: any // Ignored for Kafka
 ): Promise<string> {
-  const queue = getQueue(stage);
-  const job = await queue.add(stage, data, opts);
-  return job.id ?? "";
+  // Use tenantId or pipelineRunId as key for partitioning
+  const key = (data.tenantId as string) || (data.pipelineRunId as string) || "default";
+
+  await produceMessage(stage, key, data);
+
+  // Return a placeholder ID since Kafka doesn't give one synchronously in the same format
+  // We could return partition:offset but that requires waiting for ack and parsing result
+  return "kafka-queued";
 }
 
-// ─── Graceful Shutdown ─────────────────────────────────────────────
-export async function closeAllQueues(): Promise<void> {
-  const promises = Array.from(queues.values()).map((q) => q.close());
-  await Promise.all(promises);
-  queues.clear();
+// ─── Worker Factory (Refactored to Create Consumer) ──────────────────
+// This changes the signature and return type!
+// Callers must be updated.
+export async function createWorker(
+  stage: PipelineStage,
+  processor: (job: { data: any }) => Promise<any>,
+  _opts?: any
+) {
+  // Consumers need a group ID. We can use the stage name + "group".
+  // Or "exams2quiz-workers" if we want all workers in one group (balanced).
+  // But usually we want different consumer groups for different stages?
+  // No, actually for the SAME stage we want a consumer group to load balance.
+  const groupId = `exams2quiz-${stage}-group`;
+  const topic = `exams2quiz-${stage}`;
+
+  return createConsumer(groupId, [topic], async (payload: EachMessagePayload) => {
+    const { message } = payload;
+    if (!message.value) return;
+
+    try {
+      const data = JSON.parse(message.value.toString());
+      // Adapt to match BullMQ processor signature roughly
+      await processor({ data });
+    } catch (error) {
+      console.error(`Error processing message from ${topic}:`, error);
+      // In Kafka, throwing usually means we don't commit offset, so it will be retried?
+      // kafkajs by default retries on crash, but if we catch it here we must decide.
+      // If we swallow error, it's considered "done".
+      // BullMQ workers rely on throwing to fail the job.
+      throw error;
+    }
+  });
 }
+
+export async function closeAllQueues(): Promise<void> {
+  await disconnectKafka();
+}
+

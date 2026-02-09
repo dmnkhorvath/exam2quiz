@@ -9,6 +9,10 @@ const EnvSchema = z.object({
   REDIS_PORT: z.coerce.number().default(6379),
   REDIS_PASSWORD: z.string().default(""),
 
+  // Kafka
+  KAFKA_BROKER: z.string().default("localhost:9092"),
+  KAFKA_CLIENT_ID: z.string().default("exams2quiz"),
+
   // API
   API_HOST: z.string().default("0.0.0.0"),
   API_PORT: z.coerce.number().default(3000),
@@ -63,5 +67,17 @@ export function getCacheRedisConfig() {
     host: config.CACHE_REDIS_HOST,
     port: config.CACHE_REDIS_PORT,
     password: config.CACHE_REDIS_PASSWORD || undefined,
+  };
+}
+
+export function getKafkaConfig() {
+  const config = getConfig();
+  return {
+    clientId: config.KAFKA_CLIENT_ID,
+    brokers: [config.KAFKA_BROKER],
+    retry: {
+      initialRetryTime: 100,
+      retries: 5,
+    },
   };
 }
