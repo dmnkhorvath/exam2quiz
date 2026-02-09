@@ -169,6 +169,7 @@ async function categorizeSingleQuestion(
   apiKey: string,
   categories: Category[],
   systemPrompt: string,
+  apiBaseUrl?: string,
 ): Promise<CategorizedQuestionEntry> {
   const data = question.data;
   if (!data) {
@@ -178,7 +179,10 @@ async function categorizeSingleQuestion(
     };
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({
+    apiKey,
+    ...(apiBaseUrl ? { httpOptions: { baseUrl: apiBaseUrl } } : {}),
+  });
 
   const prompt = `Categorize this Hungarian medical exam question:
 
@@ -300,6 +304,7 @@ async function categorizeWithConcurrency(
   systemPrompt: string,
   concurrency: number,
   onProgress: (completed: number, total: number) => Promise<void>,
+  apiBaseUrl?: string,
 ): Promise<CategorizedQuestionEntry[]> {
   const results: CategorizedQuestionEntry[] = new Array(questions.length);
   let completed = 0;
@@ -307,7 +312,7 @@ async function categorizeWithConcurrency(
   for (let i = 0; i < questions.length; i += concurrency) {
     const batch = questions.slice(i, i + concurrency);
     const batchPromises = batch.map((q, batchIdx) =>
-      categorizeSingleQuestion(q, apiKey, categories, systemPrompt).then(
+      categorizeSingleQuestion(q, apiKey, categories, systemPrompt, apiBaseUrl).then(
         async (result) => {
           results[i + batchIdx] = result;
           completed++;
@@ -518,6 +523,8 @@ async function processCategorize(
     }
 
     const apiKey = await getGeminiApiKey(tenantId);
+    const config = getConfig();
+    const apiBaseUrl = config.GEMINI_API_BASE_URL || undefined;
     const systemPrompt = buildSystemPrompt(categories);
 
     const results = await categorizeWithConcurrency(
@@ -534,6 +541,7 @@ async function processCategorize(
           data: { progress },
         });
       },
+      apiBaseUrl,
     );
 
     // Save this run's categorized questions to file (for reference)

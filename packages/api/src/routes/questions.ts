@@ -293,7 +293,11 @@ export async function questionRoutes(app: FastifyInstance) {
 
       // Call Gemini to reparse
       const apiKey = await getGeminiApiKey(question.tenantId);
-      const ai = new GoogleGenAI({ apiKey });
+      const apiBaseUrl = config.GEMINI_API_BASE_URL || undefined;
+      const ai = new GoogleGenAI({
+        apiKey,
+        ...(apiBaseUrl ? { httpOptions: { baseUrl: apiBaseUrl } } : {}),
+      });
 
       const base64Image = imageData.toString("base64");
       const response = await ai.models.generateContent({
@@ -361,10 +365,15 @@ export async function questionRoutes(app: FastifyInstance) {
       }
 
       const apiKey = await getGeminiApiKey(question.tenantId);
+      const config = getConfig();
+      const apiBaseUrl = config.GEMINI_API_BASE_URL || undefined;
       const systemPrompt = buildCategorizeSystemPrompt(categories);
       const responseSchema = buildCategorizeResponseSchema(categories);
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({
+        apiKey,
+        ...(apiBaseUrl ? { httpOptions: { baseUrl: apiBaseUrl } } : {}),
+      });
 
       const prompt = `Categorize this Hungarian medical exam question:\n\nQuestion: ${data.question_text}\n\nCorrect Answer: ${data.correct_answer ?? ""}`;
       const response = await ai.models.generateContent({

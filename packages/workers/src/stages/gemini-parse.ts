@@ -113,9 +113,13 @@ async function getGeminiApiKey(tenantId: string): Promise<string> {
 async function parseSingleImage(
   imagePath: string,
   apiKey: string,
+  apiBaseUrl?: string,
 ): Promise<ParseResult> {
   const fileName = path.basename(imagePath);
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({
+    apiKey,
+    ...(apiBaseUrl ? { httpOptions: { baseUrl: apiBaseUrl } } : {}),
+  });
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -195,6 +199,7 @@ async function processImagesWithConcurrency(
   apiKey: string,
   concurrency: number,
   onProgress: (completed: number, total: number) => void,
+  apiBaseUrl?: string,
 ): Promise<ParseResult[]> {
   const results: ParseResult[] = new Array(imagePaths.length);
   let completed = 0;
@@ -203,7 +208,7 @@ async function processImagesWithConcurrency(
   for (let i = 0; i < imagePaths.length; i += concurrency) {
     const batch = imagePaths.slice(i, i + concurrency);
     const batchPromises = batch.map((imgPath, batchIdx) =>
-      parseSingleImage(imgPath, apiKey).then((result) => {
+      parseSingleImage(imgPath, apiKey, apiBaseUrl).then((result) => {
         results[i + batchIdx] = result;
         completed++;
         onProgress(completed, imagePaths.length);
@@ -233,6 +238,8 @@ async function processGeminiParse(
 
   try {
     const apiKey = await getGeminiApiKey(tenantId);
+    const config = getConfig();
+    const apiBaseUrl = config.GEMINI_API_BASE_URL || undefined;
 
     const results = await processImagesWithConcurrency(
       imagePaths,
@@ -246,6 +253,7 @@ async function processGeminiParse(
           data: { progress },
         });
       },
+      apiBaseUrl,
     );
 
     // Add source_folder to each result (derived from image's parent directory name)

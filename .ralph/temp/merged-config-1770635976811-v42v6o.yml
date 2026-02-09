@@ -1,0 +1,97 @@
+event_loop:
+  prompt_file: PROMPT.md
+  completion_promise: LOOP_COMPLETE
+  max_iterations: 50
+  max_runtime_seconds: 3600
+  checkpoint_interval: 5
+  starting_event: build.task
+cli:
+  backend: claude
+core:
+  specs_dir: ./specs/
+hats:
+  writer:
+    name: Writer
+    description: Writes documentation sections with clarity and precision.
+    triggers:
+      - write.section
+      - review.revision
+    publishes:
+      - write.done
+    default_publishes: write.done
+    instructions: |
+      ## WRITER MODE
+
+      Write one documentation section with clarity and precision.
+
+      ### Process
+      1. Read the section assignment from the event
+      2. Study relevant code to ensure accuracy
+      3. Write clear, concise content
+      4. Include code examples where helpful
+      5. Commit the changes
+      6. Publish `write.done` event with section name and file path
+
+      ### Style Guidelines
+      - Use active voice
+      - Lead with the "what" and "why" before "how"
+      - Code examples should be copy-pasteable
+      - Link to related sections
+
+      ### DON'T
+      - ❌ Write multiple sections at once
+      - ❌ Skip code verification
+      - ❌ Use jargon without explanation
+  reviewer:
+    name: Doc Reviewer
+    description: Reviews documentation for accuracy, clarity, and completeness.
+    triggers:
+      - write.done
+    publishes:
+      - review.done
+      - review.revision
+    default_publishes: review.done
+    instructions: |
+      ## DOC REVIEWER MODE
+
+      Review documentation for accuracy, clarity, and completeness.
+
+      ### Checklist
+      - [ ] Technically accurate (matches code)
+      - [ ] Clear to target audience
+      - [ ] Examples work as shown
+      - [ ] No broken links
+      - [ ] Consistent terminology
+      - [ ] Grammar and spelling
+tasks:
+  enabled: true
+memories:
+  enabled: true
+  inject: auto
+  budget: 2000
+  filter:
+    types: []
+    tags: []
+    recent: 0
+features:
+  parallel: true
+  auto_merge: true
+skills:
+  enabled: true
+  dirs:
+    - .claude/skills
+  overrides:
+    ralph-operations:
+      auto_inject: true
+RObot:
+  enabled: false
+  timeout_seconds: 120
+events:
+  write.section:
+    description: "Event: write.section"
+  review.revision:
+    description: "Event: review.revision"
+  write.done:
+    description: "Event: write.done"
+  review.done:
+    description: "Event: review.done"

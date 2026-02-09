@@ -21,6 +21,7 @@ const EnvSchema = z.object({
   // Workers
   WORKER_CONCURRENCY: z.coerce.number().default(3),
   GEMINI_API_KEY: z.string().default(""),
+  GEMINI_API_BASE_URL: z.string().default(""),
 
   // Storage
   UPLOAD_DIR: z.string().default("/data/uploads"),
